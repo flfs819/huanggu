@@ -94,6 +94,8 @@ canvas.chart { width: 100%; height: 150px; display: block; background: #1b1814; 
 .tag.t2 { border-color: #8a4a38; color: #f0c0ac; background: rgba(192,90,65,.15); } .tag.t1 { border-color: #7a6232; color: #e6cc90; }
 .filebtn { cursor: pointer; background: var(--wood3); border: 1px solid var(--edge); border-radius: 2px; padding: 3px 9px; display: inline-block; } .filebtn:hover { border-color: var(--ochre); }
 .ver { font-size: 13px; font-weight: 400; letter-spacing: .04em; color: var(--dim); margin-left: 6px; }
+.numin { width: 64px; text-align: right; font-variant-numeric: tabular-nums; } .numin::-webkit-inner-spin-button { opacity: .5; }
+.fkg { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 2px 10px; margin: 4px 0; } .fk { display: flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; } .fk small { color: var(--dim); font-size: 11px; }
 kbd { border: 1px solid var(--edge2); border-radius: 2px; padding: 0 5px; font-family: inherit; background: var(--ink); }
 @media (max-width: 640px) { body { font-size: 12.5px; } #panel { top: auto; bottom: calc(var(--barH, 96px) + 8px); max-height: 46%; right: max(16px, env(safe-area-inset-right, 0px)); } #warn { max-width: 62vw; } #feed { display: none; } .seal { min-width: 46px; } #setup { align-items: center; } #setup h1 { font-size: 26px; } }
 @media (prefers-reduced-motion: reduce) { .f { transition: none; } }
@@ -120,7 +122,7 @@ kbd { border: 1px solid var(--edge2); border-radius: 2px; padding: 0 5px; font-f
 // ═══ data.js ═══
 'use strict';
 // ───────────────────────── 常數與資料表 ─────────────────────────
-const VERSION = '0.01';      // 遊戲版本（每次發佈加 0.01）
+const VERSION = '0.02';      // 遊戲版本（每次發佈加 0.01）
 const YEAR = 600;          // 一年 = 600 模擬秒（1x 速度下 10 分鐘，10x 下 1 分鐘）
 const AGE_RATE = 3;        // 居民每曆年老化 3 歲
 const CARRY = 100;         // 居民負重上限
@@ -545,7 +547,7 @@ function finishBuilding(b) {
   if (D.left) b.left = Math.round(D.left * (G.P.resources === 'rich' ? 1.3 : G.P.resources === 'poor' ? 0.7 : 1));
   if (b.type === 'mine') b.prod = 'iron';
   if (RECIPES[b.type]) { b.prod = firstKey(RECIPES[b.type]); b.limit = RECIPES[b.type][b.prod].limit; }
-  if (b.type === 'tradepost') { b.want = {}; b.auto = { on: false, buy: {}, seeds: true, herd: true }; }
+  if (b.type === 'tradepost') { b.want = {}; b.auto = { on: false, buy: {}, seeds: true, herd: true, food: { mode: 'off', amt: 1000, kinds: {} } }; }
   if (b.type === 'cemetery') { b.graves = []; }
   if (b.type === 'school') b.staffT = 0;
   if (b.type !== 'cart') { logEv(`${D.n}落成。`, 'good', b.ex, b.ey); fx('build', b.ex, b.ey); }
@@ -1400,9 +1402,21 @@ function autoTrade(post) {
   const pay = []; let budget = 0;
   for (const r in post.want) { const a = Math.floor(inv(post, r)); if (a > 0) { pay.push(r); budget += a * RES[r].v; } }
   const get = {}, seeds = [], animals = {}; let cost = 0;
+  const F = A.food; if (F && F.mode !== 'off') { // 食物：在勾選、商船上有的種類間平均分配
+    let remain = F.mode === 'target' ? Math.ceil(F.amt - (G.totals.allFood || 0)) : F.amt;
+    const kinds = Object.keys(F.kinds || {}).filter(k => F.kinds[k] && (B.goods[k] || 0) > 0);
+    for (let guard = 0; remain > 0 && kinds.length && guard < 20; guard++) {
+      const live = kinds.filter(k => (B.goods[k] || 0) - (get[k] || 0) > 0 && budget - cost >= RES[k].v * 1.25); if (!live.length) break;
+      const share = Math.ceil(remain / live.length), money = (budget - cost) / live.length; let moved = 0;
+      for (const k of live) { const unit = RES[k].v * 1.25, q = Math.min(share, remain, (B.goods[k] || 0) - (get[k] || 0), Math.floor(Math.max(money, unit) / unit), Math.floor((budget - cost) / unit)); if (q > 0) { get[k] = (get[k] || 0) + q; cost += q * unit; remain -= q; moved += q; } }
+      if (!moved) break;
+    }
+  }
+  for (const r in A.buy) { const have = (G.totals[r] || 0), lack = Math.ceil(A.buy[r] - have); if (lack <= 0 || !B.goods[r]) continue; const unit = RES[r].v * 1.25, q = Math.min(lack, B.goods[r] - (get[r] || 0), Math.floor((budget - cost) / unit)); if (q > 0) { get[r] = (get[r] || 0) + q; cost += q * unit; } }
   if (A.seeds) for (const s of B.seeds) { const v = CROPS[s] ? SEED_V : FRUIT_V; if (cost + v <= budget) { seeds.push(s); cost += v; } }
   if (A.herd) for (const a in B.animals) { if ((G.herd[a] || 0) > 0 || G.bld.some(p => p.type === 'pasture' && p.animal === a && p.count > 0)) continue; const v = HERD_V[a]; if (cost + v <= budget) { animals[a] = 1; cost += v; } }
-  for (const r in A.buy) { const have = (G.totals[r] || 0), lack = Math.ceil(A.buy[r] - have); if (lack <= 0 || !B.goods[r]) continue; const unit = RES[r].v * 1.25, q = Math.min(lack, B.goods[r], Math.floor((budget - cost) / unit)); if (q > 0) { get[r] = q; cost += q * unit; } }
+  const needFood = F && F.mode !== 'off' && (F.mode === 'fixed' ? F.amt > 0 : (F.amt - (G.totals.allFood || 0)) > 0), needBuy = Object.keys(A.buy).some(r => A.buy[r] - (G.totals[r] || 0) > 0);
+  if (cost <= 0 && !needFood && !needBuy && !(A.seeds && B.seeds.length)) { logEv('自動交易：各項存量都已達目標，這次不需要購買。', 'info', post.ex, post.ey); return null; }
   if (cost <= 0) { logEv(pay.length ? '自動交易：商船沒有你要的貨物，或貿易站的備貨不足以交換。' : '自動交易：貿易站沒有可賣出的備貨（請在自動交易設定中加入賣出項目）。', 'info', post.ex, post.ey); return null; }
   // 付款：依清單順序，從貿易站備貨中湊足價值
   const give = {}; let need = cost;
@@ -2281,7 +2295,7 @@ function snowify(mat, wind) {
     sh.uniforms.uSnow = R.uSnow; sh.uniforms.uTime = R.uTime; sh.uniforms.uSnowV = R.uSnow;
     sh.vertexShader = 'varying float vSnowF;\nuniform float uTime;\nuniform float uSnowV;\n' + sh.vertexShader.replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\n vSnowF = objectNormal.y;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + (wind ? '#ifdef USE_INSTANCING\n float ph = instanceMatrix[3].x*0.21+instanceMatrix[3].z*0.16; float hs = length(instanceMatrix[1].xyz); float gust = 0.6 + 0.4*sin(uTime*0.23+instanceMatrix[3].x*0.05); float amp = 0.022*hs*gust*(1.0-0.7*uSnowV); transformed.x += sin(uTime*0.9-ph)*amp*max(transformed.y,0.0); transformed.z += sin(uTime*0.7-ph*0.8)*amp*0.6*max(transformed.y,0.0);\n#endif\n' : ''));
-    sh.fragmentShader = 'varying float vSnowF;\nuniform float uSnow;\n' + sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.70,0.74,0.81), clamp(uSnow*1.15,0.0,0.94) * smoothstep(0.3,0.78,vSnowF));');
+    sh.fragmentShader = 'varying float vSnowF;\nuniform float uSnow;\n' + sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.43,0.46,0.52), clamp(uSnow*1.1,0.0,0.82) * smoothstep(0.3,0.78,vSnowF));');
   };
   mat.customProgramCacheKey = () => (wind ? 'snowW' : 'snow'); return mat;
 }
@@ -2547,15 +2561,15 @@ function updateParticles(dt, sdt, time, act) {
 }
 
 // ── 環境色調、攝影機 ──
-const SKY = { clear: [0xa9bfc9, 0xb4c6cc, 0xc2c2b0, 0xbcc6cc], cloudy: [0x9fa8aa, 0xa3abab, 0xa5a59c, 0xa9afb3], rain: [0x7f8a8d, 0x848e8f, 0x86877f, 0x9aa2a8], snow: [0xa9b0b6, 0xa9b0b6, 0xa9b0b6, 0xb2b9bf] };
+const SKY = { clear: [0xa9bfc9, 0xb4c6cc, 0xc2c2b0, 0xa3acb3], cloudy: [0x9fa8aa, 0xa3abab, 0xa5a59c, 0x959ca1], rain: [0x7f8a8d, 0x848e8f, 0x86877f, 0x8a9298], snow: [0x9aa1a7, 0x9aa1a7, 0x9aa1a7, 0x979fa5] };
 const SKYC = new THREE.Color(0xa9bcc4), SKYT = new THREE.Color(), SUNC = new THREE.Color();
 function updateEnv(dt) {
   const s = seasonOf(), f = yfrac(), wth = G.weather; SKYT.setHex(SKY[wth][s]); SKYC.lerp(SKYT, Math.min(1, dt * 0.6)); R.scene.background.copy(SKYC); R.scene.fog.color.copy(SKYC).convertSRGBToLinear();
   const far = 140 + R.c.dist * 2.4; R.scene.fog.near = far * (wth === 'clear' ? 0.45 : 0.25); R.scene.fog.far = far * (wth === 'rain' || wth === 'snow' ? 0.8 : 1.15);
-  const sunI = (wth === 'clear' ? 1 : wth === 'cloudy' ? 0.5 : 0.3) * (s === 3 ? 0.82 : 1); R.sun.intensity += (sunI - R.sun.intensity) * Math.min(1, dt); R.hemi.intensity = 0.52 + (1 - R.sun.intensity) * 0.3;
+  const snowy = R.uSnow.value, sunI = (wth === 'clear' ? 1 : wth === 'cloudy' ? 0.5 : 0.3) * (s === 3 ? 0.68 : 1) * (1 - 0.18 * snowy); R.sun.intensity += (sunI - R.sun.intensity) * Math.min(1, dt); R.hemi.intensity = (0.52 + (1 - R.sun.intensity) * 0.3) * (1 - 0.22 * snowy);
   SUNC.setHex(s === 3 ? 0xe8eef8 : s === 2 ? 0xffe2b8 : 0xfff1d6); R.sun.color.lerp(SUNC, Math.min(1, dt));
   R.uSnow.value += (G.snow - R.uSnow.value) * Math.min(1, dt * 0.8);
-  const ice = clamp(R.uSnow.value * 1.2, 0, 1); R.matWater.color.copy(lin(0x4a6670)).lerp(TMPC.copy(lin(0x9fb2bc)), ice * 0.7); R.matWater.opacity = 0.86 + ice * 0.1;
+  const ice = clamp(R.uSnow.value * 1.2, 0, 1); R.matWater.color.copy(lin(0x4a6670)).lerp(TMPC.copy(lin(0x7d8e96)), ice * 0.55); R.matWater.opacity = 0.86 + ice * 0.1;
   const el = s === 3 ? 0.55 : 0.85, az = 0.9; R.sun.position.set(R.c.x + Math.cos(az) * 60, 60 * el + 20, R.c.z + Math.sin(az) * 60); R.sun.target.position.set(R.c.x, 0, R.c.z);
   const sz = clamp(R.c.dist * 0.75, 18, 95), sc = R.sun.shadow.camera; if (Math.abs(sc.right - sz) > 1) { sc.left = -sz; sc.right = sz; sc.top = sz; sc.bottom = -sz; sc.near = 5; sc.far = 260; sc.updateProjectionMatrix(); }
   R.sun.castShadow = R.shadows && wth !== 'rain' && wth !== 'snow';
@@ -2630,7 +2644,7 @@ function initUI() {
   $('warn').onclick = (e) => { const w = e.target.closest('.w'); if (!w) return; const o = G.warn[+w.dataset.i]; if (!o) return; if (o.nomad) openModal('nomad'); else if (o.trade) openModal('trade'); else jumpTo(o.x, o.y); };
   $('feed').onclick = (e) => { const f = e.target.closest('.f'); if (f && f.dataset.x) jumpTo(+f.dataset.x, +f.dataset.y); };
   $('panel').onclick = panelClick; $('panel').onchange = panelChange;
-  $('win').onclick = modalClick; $('win').onchange = modalChange; $('win').oninput = (e) => { if (UI.modal === 'trade') tradeSum(); };
+  $('win').onclick = modalClick; $('win').onchange = modalChange; $('win').oninput = (e) => { if (UI.modal === 'trade') tradeSum(); else if (UI.modal === 'auto' && e.target.classList.contains('numin') && e.target.value !== '') modalChange(e); };
   $('modal').onpointerdown = (e) => { if (e.target === $('modal')) closeModal(); };
   for (const ev of ['pointerdown', 'touchstart']) $('win').addEventListener(ev, () => { UI.winT = performance.now(); }, { passive: true });
   const cv = $('gl');
@@ -2862,13 +2876,22 @@ function drawModal() {
       h += '</table></div><div><h3>貿易站內的物資</h3><table><tr><th>品項</th><th>數量</th><th>單價</th><th>付出</th></tr>'; let any = false;
       for (const r in post.inv) { const a = Math.floor(post.inv[r]); if (a < 1) continue; any = true; h += `<tr><td>${RES[r].n}</td><td>${a}</td><td>${RES[r].v}</td><td><input type="number" id="tp_${r}" data-p="${r}" min="0" max="${a}" value="0" style="width:64px"></td></tr>`; }
       h += `</table>${any ? '' : '<div class="sub">貿易站內沒有可交換的物資。</div>'}</div></div><div class="btns" style="align-items:center"><span id="tsum"></span><button data-a="deal" id="deal" class="on">成交</button><button data-a="fill">自動湊足付出</button></div>`; } }
-  else if (k === 'auto') { const b = UI.sel && BI.get(UI.sel.id); if (b && b.type === 'tradepost') { if (!b.auto) b.auto = { on: false, buy: {}, seeds: true, herd: true }; const A = b.auto, docked = G.boat && G.boat.phase === 'dock' && G.boat.post === b.id;
-      const stp = (r) => RES[r].v >= 10 ? 10 : 50;
-      h += `<h1>自動交易</h1><div class="row"><span>自動交易</span><button data-a="aon" class="${A.on ? 'on' : ''}">${A.on ? '開啟' : '關閉'}</button></div><div class="sub">開啟後，每當商船停靠就自動成交：用「賣出」清單中已運到貿易站的物資付款，依「買入」清單順序，購買全鎮存量低於目標的物資。商人的貨物以價值的 1.25 倍計價。需要指派貿易商把賣出物資運到貿易站。</div>
-      <div class="row"><span>自動購買新種子</span><button data-a="aseed" class="${A.seeds ? 'on' : ''}">${A.seeds ? '是' : '否'}</button></div><div class="row"><span>自動購買尚未飼養的牲畜</span><button data-a="aherd" class="${A.herd ? 'on' : ''}">${A.herd ? '是' : '否'}</button></div>
+  else if (k === 'auto') { const b = UI.sel && BI.get(UI.sel.id); if (b && b.type === 'tradepost') { const A = autoCfg(b), F = A.food, docked = G.boat && G.boat.phase === 'dock' && G.boat.post === b.id;
+      const stp = (r) => RES[r].v >= 10 ? 5 : 50;
+      const num = (kind, r, val, st) => `<span class="step"><button data-a="an" data-kind="${kind}" data-r="${r}" data-v="-${st}" aria-label="減少">−</button><input type="number" class="numin" id="an_${kind}_${r}" data-kind="${kind}" data-r="${r}" min="0" max="9999" step="${st}" value="${val}"><button data-a="an" data-kind="${kind}" data-r="${r}" data-v="${st}" aria-label="增加">＋</button></span>`;
+      const nonFood = RKEYS.filter(r => RES[r].cls !== 'food');
+      h += `<h1>自動交易</h1><div class="row"><span>自動交易</span><button data-a="aon" id="aon" class="${A.on ? 'on' : ''}">${A.on ? '開啟' : '關閉'}</button></div>
+      <div class="sub">開啟後，每當商船停靠就自動成交：用「賣出」清單中已運到貿易站的物資付款。購買順序是：食物 → 其他買入 → 種子 → 牲畜，錢不夠就買到能負擔為止。商人的貨物以價值的 1.25 倍計價；需要指派貿易商把賣出物資運到貿易站。數字可以直接輸入，也可以按 −／＋ 調整。</div>
+      <div class="row"><span>自動購買新種子</span><button data-a="aseed" id="aseed" class="${A.seeds ? 'on' : ''}">${A.seeds ? '是' : '否'}</button></div><div class="row"><span>自動購買尚未飼養的牲畜</span><button data-a="aherd" id="aherd" class="${A.herd ? 'on' : ''}">${A.herd ? '是' : '否'}</button></div>
       ${docked ? '<div class="btns"><button data-a="anow" class="on">商船停靠中：立即依設定交易</button></div>' : ''}<div class="sub" id="autoMsg"></div>
-      <div class="cols"><div><h3>賣出（貿易站備貨量）</h3>${RKEYS.filter(r => G.totals[r] > 0 || b.want[r]).map(r => `<div class="row"><span>${RES[r].n}<small>（全鎮 ${fmt(G.totals[r])}・價值 ${RES[r].v}）</small></span><span class="step"><button data-a="wt" data-r="${r}" data-v="-${stp(r)}">−</button><b class="num">${b.want[r] || 0}</b><button data-a="wt" data-r="${r}" data-v="${stp(r)}">＋</button></span></div>`).join('') || '<div class="sub">目前沒有可賣出的物資。</div>'}</div>
-      <div><h3>買入（全鎮低於此數量時購買）</h3>${RKEYS.map(r => `<div class="row"><span>${RES[r].n}<small>（全鎮 ${fmt(G.totals[r])}）</small></span><span class="step"><button data-a="bt" data-r="${r}" data-v="-${stp(r)}">−</button><b class="num">${A.buy[r] || 0}</b><button data-a="bt" data-r="${r}" data-v="${stp(r)}">＋</button></span></div>`).join('')}</div></div>`; } }
+      <h3>食物（依總量自動配比）</h3>
+      <div class="row"><span>購買方式</span><select data-a="fmode" id="fmode"><option value="off" ${F.mode === 'off' ? 'selected' : ''}>不自動買食物</option><option value="target" ${F.mode === 'target' ? 'selected' : ''}>全鎮食物低於目標時補足</option><option value="fixed" ${F.mode === 'fixed' ? 'selected' : ''}>每次商船來固定購買</option></select></div>
+      <div class="row"><span id="famtLabel">${F.mode === 'fixed' ? '每次購買' : '食物目標'}</span>${num('food', 'amt', F.amt, 100)}</div>
+      <div class="sub" id="fhint">${foodHint(F)}</div>
+      <div class="fkg">${FOODS.map(r => `<label class="fk"><input type="checkbox" data-fk="${r}" ${F.kinds[r] ? 'checked' : ''}> ${RES[r].n}<small>${FOODCAT[RES[r].cat]}</small></label>`).join('')}</div>
+      <div class="sub">在勾選、而且商船上有的種類之間平均分配。建議每個類別（穀物、蔬菜、水果、肉蛋魚）都勾一些，飲食越多樣，居民越健康。</div>
+      <div class="cols"><div><h3>賣出（貿易站備貨量）</h3>${RKEYS.map(r => `<div class="row"><span>${RES[r].n}<small>（全鎮 ${fmt(G.totals[r])}・價值 ${RES[r].v}）</small></span>${num('want', r, b.want[r] || 0, stp(r))}</div>`).join('')}</div>
+      <div><h3>其他買入（全鎮低於此數量時購買）</h3>${nonFood.map(r => `<div class="row"><span>${RES[r].n}<small>（全鎮 ${fmt(G.totals[r])}）</small></span>${num('buy', r, A.buy[r] || 0, stp(r))}</div>`).join('')}</div></div>`; } }
   else if (k === 'want') { const b = UI.sel && BI.get(UI.sel.id); if (b && b.want) { h += '<h1>貿易站備貨</h1><div class="sub">貿易商會把各倉庫的物資運到貿易站，維持以下數量，供商船到來時交換。超出設定的物資（例如交易所得）會被運回倉庫。</div><div class="cols">'; for (const r of RKEYS) { if (!(G.totals[r] > 0) && !b.want[r]) continue; h += `<div class="row"><span>${RES[r].n}<small>（全鎮 ${fmt(G.totals[r])}）</small></span><span class="step"><button data-a="wt" data-r="${r}" data-v="-50">−</button><b class="num">${b.want[r] || 0}</b><button data-a="wt" data-r="${r}" data-v="50">＋</button></span></div>`; } h += '</div>'; } }
   else if (k === 'nomad') { const N = G.nomads; h += N ? `<h1>流浪者求見</h1><p>一群流浪者（<b>${nomadStr(N)}</b>）來到市政廳前，希望在此定居。他們沒有受過教育，身上幾乎沒有工具與衣物，也可能帶著疾病。接納他們會立刻增加勞動力，同時增加住房、糧食與柴火的需求。</p><div class="sub">目前人口 ${G.cits.length}，食物庫存 ${fmt(G.totals.food)}，柴火 ${fmt(G.totals.firewood)}。</div><div class="btns"><button data-a="nomY" class="on">接納他們</button><button data-a="nomN">婉拒</button></div>` : '<h1>流浪者</h1><div class="sub">他們已經離開了。</div>'; }
   else if (k === 'over') h += `<h1>聚落沉寂了</h1><p>第 ${yearOf()} 年，最後一位居民離開了人世。荒野將慢慢收回這片土地。</p><div class="btns"><button data-a="new" class="on">重新開始</button><button data-a="m" data-v="stats">檢視紀錄</button></div>`;
@@ -2882,7 +2905,7 @@ function drawModal() {
     <textarea id="importText" rows="3" placeholder="或把存檔文字貼在這裡，再按「讀取貼上的存檔」" style="width:100%;margin-top:6px;background:var(--ink);color:var(--parch);border:1px solid var(--edge);font:12px monospace"></textarea>
     <div class="btns"><button data-a="importPaste">讀取貼上的存檔</button></div><div class="sub" id="ioMsg"></div>
     <div class="btns"><button data-a="new">開始新遊戲</button></div>`; }
-  Wn.innerHTML = h; if (k === 'stats' && UI.tab === 'ch') drawCharts(); if (k === 'trade') tradeSum();
+  const keepScroll = UI.lastModal === k ? Wn.scrollTop : 0; UI.lastModal = k; Wn.innerHTML = h; Wn.scrollTop = keepScroll; if (k === 'stats' && UI.tab === 'ch') drawCharts(); if (k === 'trade') tradeSum();
 }
 function tradeRead() { const give = {}, get = {}, seeds = [], animals = {}; for (const el of $('win').querySelectorAll('input')) { const v = Math.max(0, Math.floor(+el.value || 0)); if (el.dataset.g && v) get[el.dataset.g] = Math.min(v, +el.max); else if (el.dataset.p && v) give[el.dataset.p] = Math.min(v, +el.max); else if (el.dataset.an && v) animals[el.dataset.an] = Math.min(v, +el.max); else if (el.dataset.s && el.checked) seeds.push(el.dataset.s); } return [give, get, seeds, animals]; }
 function tradeSum() { const el = $('tsum'); if (!el) return; const [gv, tv] = tradeValue(...tradeRead()); el.innerHTML = `付出價值 <b class="num">${fmt(gv)}</b>　換取價值 <b class="num">${fmt(tv)}</b>　${gv >= tv ? (tv ? '可以成交' : '') : '<span style="color:var(--madder)">尚差 ' + fmt(tv - gv) + '</span>'}`; $('deal').disabled = !(tv > 0 && gv >= tv); }
@@ -2892,9 +2915,10 @@ function modalClick(e) {
   const t = e.target.closest('[data-a]'); if (!t) return; Sfx.play('click'); const a = t.dataset.a, v = t.dataset.v;
   if (a === 'close') { closeModal(); return; } if (a === 'pf') UI.pf = v; else if (a === 'ps') UI.psort = v; else if (a === 'tab') UI.tab = v; else if (a === 'm') { UI.modal = v; }
   else if (a === 'jb') { const p = t.dataset.p, d = +v; if (p === 'builder') G.builders = clamp(G.builders + d, 0, 60); else { const bs = G.bld.filter(b => BUILD[b.type].prof === p && b.st === 'ok'); if (d > 0) { const c = bs.filter(b => b.workers < BUILD[b.type].max).sort((x, y) => x.workers - y.workers)[0]; if (c) { c.workers++; c.on = true; } } else { const c = bs.filter(b => b.workers > 0).sort((x, y) => y.workers - x.workers)[0]; if (c) c.workers--; } } assignJobs(); }
-  else if (a === 'bt' || a === 'aon' || a === 'aseed' || a === 'aherd' || a === 'anow') { const b = UI.sel && BI.get(UI.sel.id); if (b && b.auto) { const A = b.auto, r = t.dataset.r;
-      if (a === 'bt') { A.buy[r] = clamp((A.buy[r] || 0) + +v, 0, 5000); if (!A.buy[r]) delete A.buy[r]; } else if (a === 'aon') A.on = !A.on; else if (a === 'aseed') A.seeds = !A.seeds; else if (a === 'aherd') A.herd = !A.herd;
-      else { const on = A.on; A.on = true; const before = G.log.length; autoTrade(b); A.on = on; drawModal(); const m = G.log[G.log.length - 1]; if (m && G.log.length > before) $('autoMsg').textContent = m.msg; return; } } }
+  else if (a === 'an' || a === 'aon' || a === 'aseed' || a === 'aherd' || a === 'anow') { const b = UI.sel && BI.get(UI.sel.id); if (!b || b.type !== 'tradepost') return; const A = autoCfg(b);
+    if (a === 'an') { setAutoVal(b, t.dataset.kind, t.dataset.r, getAutoVal(b, t.dataset.kind, t.dataset.r) + +v); return; }
+    if (a === 'aon' || a === 'aseed' || a === 'aherd') { const key = a === 'aon' ? 'on' : a === 'aseed' ? 'seeds' : 'herd'; A[key] = !A[key]; t.classList.toggle('on', A[key]); t.textContent = a === 'aon' ? (A[key] ? '開啟' : '關閉') : (A[key] ? '是' : '否'); return; }
+    const on = A.on; A.on = true; const before = G.log.length; autoTrade(b); A.on = on; drawModal(); const m = G.log[G.log.length - 1]; if (m && G.log.length > before) $('autoMsg').textContent = m.msg; return; }
   else if (a === 'wt') { const b = UI.sel && BI.get(UI.sel.id); if (b && b.want) { const r = t.dataset.r; b.want[r] = clamp((b.want[r] || 0) + +v, 0, 3000); if (!b.want[r]) delete b.want[r]; } }
   else if (a === 'deal') { const err = doTrade(...tradeRead()); if (err) { $('tsum').innerHTML = `<span style="color:var(--madder)">${err}</span>`; return; } }
   else if (a === 'fill') { const [give, get, seeds, animals] = tradeRead(); let [gv, tv] = tradeValue({}, get, seeds, animals); const ins = [...$('win').querySelectorAll('input[data-p]')].sort((x, y) => RES[y.dataset.p].v - RES[x.dataset.p].v); gv = 0; for (const el of ins) { const r = el.dataset.p, need = Math.max(0, Math.ceil((tv - gv) / RES[r].v)), take = Math.min(+el.max, need); el.value = take; gv += take * RES[r].v; } tradeSum(); return; }
@@ -2913,7 +2937,28 @@ function modalClick(e) {
   else if (a === 'new') { closeModal(); showSetup(); return; }
   drawModal();
 }
-function modalChange(e) { if (e.target.id === 'importFile' && e.target.files && e.target.files[0]) { const r = new FileReader(); r.onload = () => { if (importSave(String(r.result))) closeModal(); else $('ioMsg').textContent = '無法讀取：這個檔案不是存檔。'; }; r.readAsText(e.target.files[0]); return; } if (UI.modal === 'trade') tradeSum(); }
+function getAutoVal(b, kind, r) { const A = autoCfg(b); return kind === 'want' ? (b.want[r] || 0) : kind === 'buy' ? (A.buy[r] || 0) : A.food.amt; }
+function setAutoVal(b, kind, r, v) {
+  const A = autoCfg(b); v = clamp(Math.floor(+v || 0), 0, 9999);
+  if (kind === 'want') { if (v) b.want[r] = v; else delete b.want[r]; } else if (kind === 'buy') { if (v) A.buy[r] = v; else delete A.buy[r]; } else A.food.amt = v;
+  const el = $('an_' + kind + '_' + r); if (el && document.activeElement !== el) el.value = v; else if (el && +el.value !== v) el.value = v;
+  if (kind === 'food') { const hn = $('fhint'); if (hn) hn.textContent = foodHint(A.food); }
+}
+function foodHint(F) { const all = Math.round(G.totals.allFood || 0).toLocaleString('en-US'), n = Object.keys(F.kinds).filter(k => F.kinds[k]).length;
+  if (F.mode === 'off') return `目前不會自動買食物。現在全鎮食物 ${all}。`;
+  const base = F.mode === 'target' ? `全鎮食物（倉庫＋各家存糧）低於 ${F.amt.toLocaleString('en-US')} 時，買到補足為止。現在全鎮食物 ${all}。` : `每次商船停靠，固定購買 ${F.amt.toLocaleString('en-US')} 單位食物。`;
+  return base + (n ? `已勾選 ${n} 種。` : '請在下方勾選要買的食物種類。'); }
+function autoCfg(b) { // 補齊設定並把舊版存在「買入」清單裡的食物移到食物設定
+  if (!b.auto) b.auto = { on: false, buy: {}, seeds: true, herd: true }; const A = b.auto;
+  if (!A.food) { A.food = { mode: 'off', amt: 1000, kinds: {} }; let sum = 0; for (const r of Object.keys(A.buy)) if (RES[r].cls === 'food') { sum += A.buy[r]; A.food.kinds[r] = 1; delete A.buy[r]; } if (sum) { A.food.mode = 'target'; A.food.amt = sum; } }
+  return A;
+}
+function modalChange(e) {
+  const el = e.target;
+  if (UI.modal === 'auto') { const b = UI.sel && BI.get(UI.sel.id); if (b && b.type === 'tradepost') { const A = autoCfg(b);
+    if (el.classList.contains('numin')) { setAutoVal(b, el.dataset.kind, el.dataset.r, el.value); return; }
+    if (el.dataset.fk) { if (el.checked) A.food.kinds[el.dataset.fk] = 1; else delete A.food.kinds[el.dataset.fk]; $('fhint').textContent = foodHint(A.food); return; }
+    if (el.dataset.a === 'fmode') { A.food.mode = el.value; $('famtLabel').textContent = el.value === 'fixed' ? '每次購買' : '食物目標'; $('fhint').textContent = foodHint(A.food); return; } } } if (e.target.id === 'importFile' && e.target.files && e.target.files[0]) { const r = new FileReader(); r.onload = () => { if (importSave(String(r.result))) closeModal(); else $('ioMsg').textContent = '無法讀取：這個檔案不是存檔。'; }; r.readAsText(e.target.files[0]); return; } if (UI.modal === 'trade') tradeSum(); }
 function drawCharts() {
   const S = G.samples, H = G.hist; const cs = getComputedStyle(document.documentElement), col = (v) => cs.getPropertyValue(v).trim();
   const plot = (id, series, opt) => { const cv = $(id); if (!cv) return; const dpr = Math.min(2, window.devicePixelRatio || 1), w = cv.clientWidth, h = cv.clientHeight; cv.width = w * dpr; cv.height = h * dpr; const x = cv.getContext('2d'); x.scale(dpr, dpr); const L = 44, Rr = 8, T = 8, B = 20; let mx = 1; for (const s of series) for (const v of s.d) if (v > mx) mx = v; let step = Math.pow(10, Math.floor(Math.log10(mx))) * (mx / Math.pow(10, Math.floor(Math.log10(mx))) > 5 ? 2 : mx / Math.pow(10, Math.floor(Math.log10(mx))) > 2 ? 1 : 0.5); if (step < 1 && !(opt && opt.max)) step = 1; mx = Math.ceil(mx / step) * step; if (opt && opt.max) mx = opt.max;
