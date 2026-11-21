@@ -122,7 +122,7 @@ kbd { border: 1px solid var(--edge2); border-radius: 2px; padding: 0 5px; font-f
 // ═══ data.js ═══
 'use strict';
 // ───────────────────────── 常數與資料表 ─────────────────────────
-const VERSION = '0.03';      // 遊戲版本（每次發佈加 0.01）
+const VERSION = '0.04';      // 遊戲版本（每次發佈加 0.01）
 const YEAR = 600;          // 一年 = 600 模擬秒（1x 速度下 10 分鐘，10x 下 1 分鐘）
 const AGE_RATE = 3;        // 居民每曆年老化 3 歲
 const CARRY = 100;         // 居民負重上限
@@ -587,7 +587,7 @@ function removeRoad(k) { if (G.roadJobs[k]) { delete G.roadJobs[k]; W.tileDirty 
 
 // ── 新遊戲 ──
 function newGame(P) {
-  genWorld(P); CI = new Map(); BI = new Map(); FX.length = 0;
+  genWorld(P); CI = new Map(); BI = new Map(); FX.length = 0; if (typeof LIFT !== 'undefined') LIFT.clear();
   const D = DIFF[P.diff] || DIFF.normal, sm = P.start === 'rich' ? 1.5 : P.start === 'poor' ? 0.65 : 1;
   G = { v: 2, P, t: YEAR * 0.065, rs: (P.seed * 7919 + 13) | 0, nid: 1, temp: 5, weather: 'clear', wT: 20, snow: 0, tn: 0,
     cits: [], bld: [], drops: [], roadJobs: {}, deer: [], seeds: {}, fruits: {}, herd: {}, builders: 2, log: [], hist: [], samples: [],
@@ -664,7 +664,7 @@ function canReach(c, x, y, adj) {
 }
 function stepCit(c, dt) {
   updateNeeds(c, dt); if (c.dead) return;
-  if (c.plan.length && !c.np && (c.fed < 0.1 || c.warm < 0.1) && c.age >= 6 && !c.sick) { c.ck = (c.ck || 0) - dt; if (c.ck <= 0) { c.ck = 5; clearPlan(c); c.idle = 0; } }
+  if (c.plan.length && !c.np && (c.fed < 0.1 || c.warm < Math.max(0.1, warmNeed(c) - 0.2)) && c.age >= 6 && !c.sick) { c.ck = (c.ck || 0) - dt; if (c.ck <= 0) { c.ck = 5; clearPlan(c); c.idle = 0; } }
   if (!c.plan.length) { c.idle -= dt; c.anim = 0; if (c.idle > 0) return; think(c); if (!c.plan.length) { c.idle = 1 + rnd(); return; } }
   for (let guard = 0; c.plan.length && guard < 8; guard++) {
     const s = c.plan[0];
@@ -738,9 +738,13 @@ function eatFrom(b, c) {
 }
 
 // ── 決策 ──
+function warmNeed(c) { // 現在該回去取暖的體溫門檻：基本 0.32，加上回程路上預估流失的量
+  if (c.age < 6) return 0.32; const thr = c.coat > 0 ? (c.coatQ >= 1 ? -8 : 0.5) : 9, loss = Math.max(0, thr - G.temp) * 0.003; if (!loss) return 0.32;
+  const h = BI.get(c.home); const d = h ? dist(c.x, c.y, h.ex, h.ey) : 12; return Math.min(0.9, 0.32 + loss * (d / 1.9) * 1.25);
+}
 function think(c) {
   c.st = ''; c.np = true;
-  if (c.warm < 0.32 && planWarm(c)) return;
+  if (c.warm < warmNeed(c) && planWarm(c)) return;
   if (c.fed < 0.36 && planEat(c)) return;
   if (c.fed < 0.55 && c.age >= 6) { const h = BI.get(c.home); if (h && h.st === 'ok' && houseFood(h) >= 2 && dist(c.x, c.y, h.ex, h.ey) < 14 && canReach(c, h.ex, h.ey) && planEat(c)) return; }
   if (c.sick && planSick(c)) return;
@@ -759,9 +763,10 @@ function think(c) {
 function planWarm(c) {
   const h = BI.get(c.home), reg = regAt(c.x, c.y);
   if (h && h.st === 'ok') {
-    if (!h.heat && inv(h, 'firewood') < 1 && !h.fetch.fw && isWorker(c) && !carryW(c) && planFetch(c, h, 'fw')) return true;
+    if (!h.heat && inv(h, 'firewood') < 1 && !h.fetch.fw && c.age >= 10) { if (carryW(c) > 0 && findSrc(c.x, c.y, 'firewood', reg)) { for (const k in c.carry) addDrop(c.x, c.y, k, c.carry[k]); c.carry = {}; c.keep = false; } if (!carryW(c) && planFetch(c, h, 'fw')) return true; }
+    if (!h.heat && inv(h, 'firewood') < 1 && c.warm < 0.2) { const s2 = findSrc(c.x, c.y, 'firewood', reg); if (s2 && s2.id !== h.id) return setPlan(c, [goB(s2, '家中沒有柴火，到倉庫旁生火取暖'), act(c => { if (takeInv(s2, 'firewood', 1) < 1) return false; cons('firewood', 1); c.byFire = true; }), wait(9, '在營火旁取暖', c => c.warm >= 0.97), act(c => { c.byFire = false; })]); }
     if (!canReach(c, h.ex, h.ey)) return false;
-    return setPlan(c, [goB(h, '回家取暖'), enter(h), wait(h.heat || inv(h, 'firewood') >= 1 ? 30 : 7, h.heat ? '取暖中' : '家中沒有柴火，瑟縮著', c => c.warm >= 0.97), leave()]);
+    return setPlan(c, [goB(h, '回家取暖'), enter(h), wait(h.heat || inv(h, 'firewood') >= 1 ? 30 : 7, h.heat ? '取暖中' : '家中沒有柴火，瑟縮著', c => c.warm >= 0.97 || (!h.heat && inv(h, 'firewood') < 1 && c.warm < 0.6)), leave()]);
   }
   const s = findSrc(c.x, c.y, 'firewood', reg); if (!s) { c.st = '受寒，無處取暖'; return false; }
   return setPlan(c, [goB(s, '前往營地取暖'), act(c => { if (takeInv(s, 'firewood', 1) < 1) return false; cons('firewood', 1); c.byFire = true; }), wait(9, '在營火旁取暖', c => c.warm >= 0.97), act(c => { c.byFire = false; })]);
@@ -1084,7 +1089,7 @@ const JOBS = {
         let src = null; for (const o of G.bld) if (o.type === 'pasture' && o !== b && o.st === 'ok' && o.count >= 6 && (o.animal === b.animal || !b.animalSet) && (!src || (o.animal === b.animal) > (src.animal === b.animal) || o.count / Math.max(1, o.cap) > src.count / Math.max(1, src.cap))) src = o;
         if (!src) { c.st = '牧場沒有牲畜（可從其他牧場分群，或向商船購買）'; return false; }
         if (!canReach(c, src.ex, src.ey)) return false;
-        return setPlan(c, [goB(src, '前往其他牧場分群'), work(3, 5, '挑選牲畜', true), act(c => { if (src.count < 4 || b.count > 0) return false; const A2 = ANIMALS[src.animal], cap = Math.floor(b.w * b.d / A2.tiles), k = Math.min(cap, Math.max(2, Math.floor(src.count * 0.4))); src.count -= k; src.gd = true; c.herdMove = { a: src.animal, k }; }), goB(b, '把牲畜趕回牧場'), act(c => { const m = c.herdMove; c.herdMove = null; if (!m) return; b.animal = m.a; b.count += m.k; b.gd = true; logEv(`牧民從另一座牧場分出 ${m.k} 隻${ANIMALS[m.a].n}。`, 'info', b.ex, b.ey); })]);
+        return setPlan(c, [goB(src, '前往其他牧場分群'), work(3, 5, '挑選牲畜', true), act(c => { if (src.count < 4 || b.count > 0) return false; const A2 = ANIMALS[src.animal], cap = Math.floor(b.w * b.d / A2.tiles), k = Math.min(cap, Math.max(2, Math.floor(src.count * 0.4))); src.count -= k; src.gd = true; c.herdMove = { a: src.animal, k }; }), goB(b, '把牲畜趕回牧場'), act(c => { const m = c.herdMove; c.herdMove = null; if (!m) return; if (b.count > 0 && b.animal !== m.a) { G.herd[m.a] = (G.herd[m.a] || 0) + m.k; return; } b.animal = m.a; b.count += m.k; b.gd = true; logEv(`牧民從另一座牧場分出 ${m.k} 隻${ANIMALS[m.a].n}。`, 'info', b.ex, b.ey); })]);
       }
     }
     const w = invW(b);
@@ -1278,7 +1283,7 @@ function tickFast(dt) {
   for (const d of G.deer) { if (d.claim && CI.has(d.claim)) continue; d.t -= dt; if (d.t <= 0) { d.t = 3 + rnd() * 9; const x = d.x + (rnd() - 0.5) * 10, y = d.y + (rnd() - 0.5) * 10; if (wildTile(x | 0, y | 0)) { d.tx = x; d.ty = y; } }
     const dx = d.tx - d.x, dy = d.ty - d.y, q = Math.hypot(dx, dy); if (q > 0.1) { const v = Math.min(q, 0.55 * dt); d.x += dx / q * v; d.y += dy / q * v; d.dx = dx / q; d.dy = dy / q; d.mv = 1; } else d.mv = 0; }
   if (G.tornado) tornadoTick(dt);
-  if (G.boat) boatTick(dt);
+  if (G.boat) boatTick(dt); else if (LIFT.size) LIFT.clear();
 }
 function wildTile(x, y) { const n = W.n; if (x < 2 || y < 2 || x >= n - 2 || y >= n - 2) return false; const i = y * n + x; if (W.tt[i] !== 0 || W.road[i]) return false; for (let dy = -3; dy <= 3; dy += 3) for (let dx = -3; dx <= 3; dx += 3) if (W.occ[i + dy * n + dx]) return false; return true; }
 function spawnDeer(near) { for (let k = 0; k < 40; k++) { let x, y; if (near) { x = near.x + (rnd() - 0.5) * 8; y = near.y + (rnd() - 0.5) * 8; } else { x = 3 + rnd() * (W.n - 6); y = 3 + rnd() * (W.n - 6); if (Math.hypot(x - W.start[0], y - W.start[1]) < 14) continue; } if (!wildTile(x | 0, y | 0)) continue; G.deer.push({ id: G.nid++, x, y, tx: x, ty: y, t: rnd() * 5, claim: 0, dx: 1, dy: 0 }); return; } }
@@ -1472,7 +1477,7 @@ function loadGame(str) {
   const T = D.w.trees; for (let i = 0; i < T.length; i += 5) { const id = addTree(T[i], T[i + 1], T[i + 2], T[i + 3], Math.random); if (id >= 0) w.tS[id] = T[i + 4]; }
   const R = D.w.rocks; for (let i = 0; i < R.length; i += 4) addRock(R[i], R[i + 1], R[i + 2], R[i + 3]);
   for (let i = 0; i < D.w.roads.length; i += 2) w.road[D.w.roads[i]] = D.w.roads[i + 1]; for (const i of D.w.pits) w.tt[i] = 3;
-  G = D.G; CI = new Map(); BI = new Map(); FX.length = 0;
+  G = D.G; CI = new Map(); BI = new Map(); FX.length = 0; LIFT.clear();
   for (const c of G.cits) { c.plan = []; c.hid = false; c.inB = 0; c.byFire = false; c.keep = false; c.idle = Math.random(); CI.set(c.id, c); }
   for (const b of G.bld) { BI.set(b.id, b); b.dirty = true; b.gd = true; if (b.fetch) b.fetch = {}; const S = siteOf(b); if (S) S.inc = {}; const D2 = BUILD[b.type];
     for (let y = b.y; y < b.y + b.d; y++) for (let x = b.x; x < b.x + b.w; x++) { w.occ[y * n + x] = b.id; if (!D2.area && !D2.flat) w.blk[y * n + x] = 1; } }
@@ -2679,7 +2684,7 @@ function setTool(id) {
   UI.drag = null; R.keepRadius = false; setGhost(null); R.radius.visible = false; showSpots(null);
   if (!id) { UI.tool = null; $('tip').hidden = true; return; }
   const [k, v] = id.split(':'); UI.tool = { id, k, v }; UI.sel = null; R.sel = null; $('panel').hidden = true; tip();
-  UI.snapKey = null; UI.spotT = 0; if (k === 'b' && BUILD[v] && BUILD[v].needs) showSpots(v); else showSpots(null);
+  UI.snapKey = null; UI.spotKey = null; if (k === 'b' && BUILD[v] && BUILD[v].needs) showSpots(v); else showSpots(null);
 }
 function tip(extra, bad) {
   const t = UI.tool; if (!t) { $('tip').hidden = true; return; } let s = '';
@@ -3049,7 +3054,7 @@ function showSetup() {
 }
 function uiTick(dt, sdt) {
   keysTick(dt); updateGhost();
-  if (UI.tool && UI.tool.k === 'b' && BUILD[UI.tool.v] && BUILD[UI.tool.v].needs) { UI.spotT += dt; if (UI.spotT > 2) { UI.spotT = 0; showSpots(UI.tool.v); } }
+  if (UI.tool && UI.tool.k === 'b' && BUILD[UI.tool.v] && BUILD[UI.tool.v].needs) { const sk = UI.tool.v + ',' + G.bld.length + ',' + Object.keys(G.roadJobs).length; if (UI.spotKey !== sk) { UI.spotKey = sk; showSpots(UI.tool.v); } }
   if (UI.follow && UI.sel && UI.sel.k === 'c') { const c = CI.get(UI.sel.id); if (c) { R.ct.x = c.x; R.ct.z = c.y; } }
   UI.tAcc += dt; if (UI.tAcc > 0.25) { UI.tAcc = 0; drawTop(); drawFeed(); updateBadge(); }
   UI.pAcc += dt; if (UI.pAcc > 0.5) { UI.pAcc = 0; if (UI.sel) drawPanel(); if (UI.modal === 'people' || UI.modal === 'jobs' || (UI.modal === 'stats' && (UI.tab === 'ov' || UI.tab === 'inv'))) { if (performance.now() - (UI.winT || 0) > 700) drawModal(); } layoutVars(); }
