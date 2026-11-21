@@ -912,7 +912,7 @@ function housingTick() {
     if (!tgt && mem.some(u => !u.home)) { let best = null; for (const h of houses) if (h.occ.length && fits(h, mem) && (!best || room(h) > room(best))) best = h; tgt = best; }
     if (!tgt && mem.some(u => !u.home)) for (const l of lodges) if (fits(l, mem)) { tgt = l; break; }
     if (tgt) { for (const u of mem) if (u.home !== tgt.id) moveIn(u, tgt); continue; }
-    for (const u of mem) if (!u.home) lodgeIn(u, lodges); // 實在住不下：能住旅舍的先住
+    for (const u of mem) if (!u.home && !lodgeIn(u, lodges)) { let best = null; for (const h of houses) if (room(h) > 0 && (!best || room(h) > room(best))) best = h; if (best) moveIn(u, best); } // 全家放不下：沒家的人先個別安置
   }
   // 2. 婚配：單身男女遷入空屋；或遷入獨居者的住宅
   const sM = [], sF = [];
