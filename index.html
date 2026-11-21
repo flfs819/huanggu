@@ -122,7 +122,7 @@ kbd { border: 1px solid var(--edge2); border-radius: 2px; padding: 0 5px; font-f
 // ═══ data.js ═══
 'use strict';
 // ───────────────────────── 常數與資料表 ─────────────────────────
-const VERSION = '0.02';      // 遊戲版本（每次發佈加 0.01）
+const VERSION = '0.03';      // 遊戲版本（每次發佈加 0.01）
 const YEAR = 600;          // 一年 = 600 模擬秒（1x 速度下 10 分鐘，10x 下 1 分鐘）
 const AGE_RATE = 3;        // 居民每曆年老化 3 歲
 const CARRY = 100;         // 居民負重上限
@@ -199,13 +199,13 @@ const BUILD = {
   field:     { n: '農田', cat: 'food', area: 1, min: 3, maxSide: 14, cost: {}, workPer: 0.35, max: 4, prof: 'farmer', ic: '田', desc: '拖曳劃定範圍。春播、夏耘、秋收。' },
   orchard:   { n: '果園', cat: 'food', area: 1, min: 4, maxSide: 14, cost: {}, workPer: 0.3, max: 3, prof: 'farmer', ic: '果', desc: '果樹需數年才能結果，會老化，需補種。' },
   pasture:   { n: '牧場', cat: 'food', area: 1, min: 4, maxSide: 18, costPer: { log: 0.12 }, workPer: 0.2, max: 2, prof: 'herder', ic: '牧', desc: '拖曳劃定範圍，飼養雞、羊或牛（一座只養一種）。拓荒者帶來的牲畜會被趕進來；更多種類可向商船購買。' },
-  fishdock:  { n: '漁夫碼頭', cat: 'food', w: 3, d: 2, cost: { log: 22, stone: 6 }, work: 60, max: 4, prof: 'fisher', needs: 'water', radius: 9, wood: 1, ic: '漁', desc: '必須緊鄰水域。過度集中會降低漁獲。' },
+  fishdock:  { n: '漁夫碼頭', cat: 'food', w: 3, d: 2, cost: { log: 22, stone: 6 }, work: 60, max: 4, prof: 'fisher', needs: 'water', radius: 9, wood: 1, ic: '漁', desc: '正面朝向水域，最前排可伸入淺水。選取後地圖會標出可建造的位置。過度集中會降低漁獲。' },
   gatherer:  { n: '採集小屋', cat: 'food', w: 3, d: 3, cost: { log: 26, stone: 8 }, work: 60, max: 4, prof: 'gatherer', radius: 14, wood: 1, ic: '採', desc: '在成熟森林採集漿果、蘑菇與根莖。' },
   hunter:    { n: '狩獵小屋', cat: 'food', w: 3, d: 3, cost: { log: 30, stone: 10 }, work: 60, max: 3, prof: 'hunter', radius: 17, wood: 1, ic: '獵', desc: '獵捕野鹿，取得鹿肉與皮革。' },
   forester:  { n: '林務站', cat: 'res', w: 3, d: 3, cost: { log: 22, stone: 10 }, work: 60, max: 4, prof: 'forester', radius: 13, wood: 1, ic: '林', desc: '砍伐成熟樹木並補植樹苗，使森林永續。' },
   herbalist: { n: '藥草小屋', cat: 'res', w: 3, d: 3, cost: { log: 20, stone: 6 }, work: 50, max: 2, prof: 'herbalist', radius: 13, wood: 1, ic: '藥', desc: '在老林中採集藥草，供醫療使用。' },
   quarry:    { n: '採石場', cat: 'res', w: 5, d: 5, cost: { log: 36 }, work: 120, max: 8, prof: 'stonecutter', flat: 1, left: 1400, ic: '岩', desc: '持續開採石材。資源有限，開採後土地無法復原。' },
-  mine:      { n: '礦坑', cat: 'res', w: 3, d: 3, cost: { log: 44, stone: 28 }, work: 130, max: 8, prof: 'miner', needs: 'rock', left: 1100, ic: '礦', desc: '必須緊鄰山壁。開採鐵礦或煤炭，終將枯竭。' },
+  mine:      { n: '礦坑', cat: 'res', w: 3, d: 3, cost: { log: 44, stone: 28 }, work: 130, max: 8, prof: 'miner', needs: 'rock', left: 1100, ic: '礦', desc: '背面必須緊鄰山壁。選取後地圖會標出可建造的位置。開採鐵礦或煤炭，終將枯竭。' },
   woodcutter:{ n: '劈柴棚', cat: 'ind', w: 2, d: 2, cost: { log: 12, stone: 4 }, work: 30, max: 1, prof: 'woodcutter', wood: 1, ic: '柴', desc: '將原木劈成家用柴火（1 原木 → 4 柴火）。' },
   blacksmith:{ n: '鐵匠鋪', cat: 'ind', w: 3, d: 3, cost: { log: 30, stone: 32, iron: 4 }, work: 90, max: 1, prof: 'blacksmith', ic: '鐵', desc: '以鐵礦與原木打造工具；加入煤炭可產出雙倍。' },
   tailor:    { n: '裁縫鋪', cat: 'ind', w: 3, d: 3, cost: { log: 30, stone: 18 }, work: 80, max: 1, prof: 'tailor', wood: 1, ic: '衣', desc: '以皮革、羊毛縫製衣物。' },
@@ -213,7 +213,7 @@ const BUILD = {
   stockpile: { n: '堆料場', cat: 'store', area: 1, min: 2, maxSide: 10, cost: {}, workPer: 0.05, store: 'raw', capPer: 260, ic: '堆', desc: '露天存放原木、石材、礦石、柴火。' },
   barn:      { n: '糧倉', cat: 'store', w: 4, d: 4, cost: { log: 42, stone: 14 }, work: 90, store: 'in', cap: 6500, wood: 1, ic: '倉', desc: '存放食物、工具、衣物等室內物資。' },
   market:    { n: '市場', cat: 'store', w: 5, d: 5, cost: { log: 52, stone: 40 }, work: 120, max: 6, prof: 'vendor', store: 'all', cap: 7000, radius: 22, ic: '市', desc: '商販自各倉庫集貨，範圍內住宅就近取得多樣物資。' },
-  tradepost: { n: '貿易站', cat: 'trade', w: 5, d: 4, cost: { log: 62, stone: 58 }, work: 150, max: 4, prof: 'trader', store: 'trade', cap: 6000, needs: 'nav', wood: 1, ic: '貿', desc: '須臨可通航河道。商船定期到來，以物易物。' },
+  tradepost: { n: '貿易站', cat: 'trade', w: 5, d: 4, cost: { log: 62, stone: 58 }, work: 150, max: 4, prof: 'trader', store: 'trade', cap: 6000, needs: 'nav', wood: 1, ic: '貿', desc: '正面朝向可通航的河道，最前排可伸入淺水。選取後地圖會標出可建造的位置。商船定期到來，以物易物。' },
   school:    { n: '學校', cat: 'pub', w: 4, d: 4, cost: { log: 50, stone: 50 }, work: 120, max: 1, prof: 'teacher', seats: 20, wood: 1, ic: '學', desc: '兒童受教育後成年較晚，但工作效率更高。' },
   hospital:  { n: '醫院', cat: 'pub', w: 4, d: 4, cost: { log: 52, stone: 70 }, work: 130, max: 1, prof: 'physician', beds: 24, ic: '醫', desc: '收治病患，降低疾病致死率並減少傳染。使用藥草。' },
   chapel:    { n: '禮拜堂', cat: 'pub', w: 4, d: 5, cost: { log: 44, stone: 100 }, work: 160, max: 1, prof: 'cleric', ic: '堂', desc: '撫慰居民心靈，提升幸福。' },
@@ -502,11 +502,15 @@ function checkPlace(type, x, y, w, d, rot) {
   const n = W.n, D = BUILD[type];
   if (x < 1 || y < 1 || x + w > n - 1 || y + d > n - 1) return '超出地圖邊界';
   if (D.area) { if (w < D.min || d < D.min) return `範圍太小（至少 ${D.min}×${D.min}）`; if (w > D.maxSide || d > D.maxSide) return `範圍太大（單邊最多 ${D.maxSide}）`; }
-  let mn = 1e9, mx = -1e9;
-  for (let j = y; j < y + d; j++) for (let i = x; i < x + w; i++) { const k = j * n + i; if (W.tt[k] === 1) return '不可建於水面'; if (W.tt[k] === 2) return '地形過於陡峭'; if (W.tt[k] === 3) return '廢棄礦坑無法利用'; if (W.occ[k]) return '已被佔用'; if (W.road[k] === 3) return '不可覆蓋橋樑'; }
-  for (let j = y; j <= y + d; j++) for (let i = x; i <= x + w; i++) { const h = W.h[j * W.n1 + i]; if (h < mn) mn = h; if (h > mx) mx = h; }
+  let mn = 1e9, mx = -1e9; const wb = D.needs === 'water' || D.needs === 'nav';
+  // 佔地的最前排（面向水的一排）與最後排
+  const isFront = (i, j) => rot === 0 ? j === y + d - 1 : rot === 2 ? j === y : rot === 1 ? i === x + w - 1 : i === x;
+  let frontWater = 0, frontLen = 0;
+  for (let j = y; j < y + d; j++) for (let i = x; i < x + w; i++) { const k = j * n + i; if (wb && isFront(i, j)) { frontLen++; if (W.tt[k] === 1) { if (D.needs === 'water' || W.nav[k]) frontWater++; if (W.occ[k]) return '已被佔用'; if (W.road[k] === 3) return '不可覆蓋橋樑'; continue; } }
+    if (W.tt[k] === 1) return wb ? '只有最前排可以伸入水面' : '不可建於水面'; if (W.tt[k] === 2) return '地形過於陡峭'; if (W.tt[k] === 3) return '廢棄礦坑無法利用'; if (W.occ[k]) return '已被佔用'; if (W.road[k] === 3) return '不可覆蓋橋樑'; }
+  for (let j = y; j <= y + d; j++) for (let i = x; i <= x + w; i++) { let h = W.h[j * W.n1 + i]; if (wb && h < WATER_Y) h = WATER_Y; if (h < mn) mn = h; if (h > mx) mx = h; }
   if (mx - mn > (D.area ? 2.8 : D.needs ? 2.1 : 1.4)) return '地面不夠平坦';
-  if (D.needs === 'water' || D.needs === 'nav') { let c = 0; const fs = frontStrip(x, y, w, d, rot); for (const [i, j] of fs) { if (i < 0 || j < 0 || i >= n || j >= n) continue; const k = j * n + i; if (W.tt[k] === 1 && (D.needs === 'water' || W.nav[k])) c++; } if (c < Math.ceil(fs.length * 0.6)) return D.needs === 'nav' ? '正面必須緊鄰可通航的河道' : '正面必須緊鄰水域'; }
+  if (wb) { let c = 0; const fs = frontStrip(x, y, w, d, rot); for (const [i, j] of fs) { if (i < 0 || j < 0 || i >= n || j >= n) continue; const k = j * n + i; if (W.tt[k] === 1 && (D.needs === 'water' || W.nav[k])) c++; } if (c < Math.ceil(fs.length * 0.6) && frontWater < Math.ceil(frontLen * 0.6)) return D.needs === 'nav' ? '正面必須緊鄰可通航的河道' : '正面必須緊鄰水域'; }
   if (D.needs === 'rock') { let c = 0; for (const [i, j] of frontStrip(x, y, w, d, rot, true)) { if (i < 0 || j < 0 || i >= n || j >= n) continue; if (W.tt[j * n + i] === 2) c++; } if (c < 2) return '背面必須緊鄰山壁'; }
   return null;
 }
@@ -1362,7 +1366,7 @@ function launchBoat(post) {
   const od = [[0, 1], [1, 0], [0, -1], [-1, 0]][post.rot], f0 = fs[fs.length >> 1]; let s = f0[1] * n + f0[0]; for (let k = 3; k >= 1; k--) { const X = f0[0] + od[0] * k, Y = f0[1] + od[1] * k; if (X >= 0 && Y >= 0 && X < n && Y < n && W.nav[Y * n + X]) { s = Y * n + X; break; } }
   const par = new Int32Array(n * n).fill(-2), q = [s]; par[s] = -1; let end = -1;
   for (let h = 0; h < q.length; h++) { const i = q[h], x = i % n, y = (i / n) | 0; if (x === 0 || y === 0 || x === n - 1 || y === n - 1) { end = i; break; }
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = x + dx, Y = y + dy; if (X < 0 || Y < 0 || X >= n || Y >= n) continue; const j = Y * n + X; if (par[j] !== -2 || W.tt[j] !== 1) continue; par[j] = i; q.push(j); } }
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = x + dx, Y = y + dy; if (X < 0 || Y < 0 || X >= n || Y >= n) continue; const j = Y * n + X; if (par[j] !== -2 || W.tt[j] !== 1 || W.occ[j]) continue; par[j] = i; q.push(j); } }
   if (end < 0) { G.nextBoat = G.t + YEAR; logEv('商船無法抵達貿易站（找不到通往地圖邊緣的河道）。', 'bad', post.ex, post.ey); return; }
   const path = []; for (let i = end; i >= 0; i = par[i]) path.push(i);
   const kind = pick(['general', 'general', 'seeds', 'livestock', 'materials']), goods = {}, seeds = [], animals = {};
@@ -2319,6 +2323,7 @@ function initRender(canvas) {
   const ring = new THREE.RingGeometry(0.42, 0.52, 24); ring.rotateX(-Math.PI / 2); R.selRing = new THREE.Mesh(ring, new THREE.MeshBasicMaterial({ color: 0xf2e3b0, transparent: true, opacity: 0.9, depthTest: false })); R.selRing.visible = false; R.selRing.renderOrder = 6; R.scene.add(R.selRing);
   R.radius = new THREE.LineLoop(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(97 * 3), 3)), new THREE.LineBasicMaterial({ color: 0xf2e3b0, transparent: true, opacity: 0.75, depthTest: false })); R.radius.visible = false; R.radius.frustumCulled = false; R.radius.renderOrder = 6; R.scene.add(R.radius);
   R.selBox = new THREE.LineLoop(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(5 * 3), 3)), new THREE.LineBasicMaterial({ color: 0xf2e3b0, depthTest: false })); R.selBox.visible = false; R.selBox.frustumCulled = false; R.selBox.renderOrder = 6; R.scene.add(R.selBox);
+  const sg = new THREE.RingGeometry(0.55, 0.9, 20); sg.rotateX(-Math.PI / 2); R.spots = new THREE.InstancedMesh(sg, new THREE.MeshBasicMaterial({ color: 0x9fd07a, transparent: true, opacity: 0.85, depthTest: false }), 500); R.spots.count = 0; R.spots.frustumCulled = false; R.spots.renderOrder = 6; R.scene.add(R.spots);
   initParticles(); R.ready = true; resizeRender();
 }
 function resizeRender() { const c = R.renderer.domElement, w = c.clientWidth || window.innerWidth, h = c.clientHeight || window.innerHeight; R.renderer.setSize(w, h, false); R.cam.aspect = w / h; R.cam.updateProjectionMatrix(); R.w = w; R.h = h; }
@@ -2595,6 +2600,12 @@ function setGhost(tiles, okFn, model) { // tiles: [[x,y,ok]], model: {type, x, y
   R.ghostTiles.count = i; R.ghostTiles.instanceMatrix.needsUpdate = true; if (R.ghostTiles.instanceColor) R.ghostTiles.instanceColor.needsUpdate = true;
   if (model) { const D = BUILD[model.type]; let g = R.ghostCache[model.type]; if (!g) g = R.ghostCache[model.type] = Models.build(model.type, D.w, D.d, 1).geo; R.ghostModel.geometry = g; R.ghostModel.material = model.ok ? R.matGhostOk : R.matGhostBad; R.ghostModel.visible = true; const b = { x: model.x, y: model.y, w: model.w, d: model.d }; R.ghostModel.position.set(model.x + model.w / 2, baseY(b) + 0.04, model.y + model.d / 2); R.ghostModel.rotation.y = model.rot * Math.PI / 2; } else R.ghostModel.visible = false;
 }
+function showSpots(type) {
+  if (!R.spots) return; if (!type) { R.spots.count = 0; return; }
+  const list = validSpots(type); let i = 0;
+  for (const [x, z] of list) { if (i >= 500) break; DUM.position.set(x, Math.max(heightAt(x, z), WATER_Y) + 0.12, z); DUM.rotation.set(0, 0, 0); DUM.scale.set(1, 1, 1); DUM.updateMatrix(); R.spots.setMatrixAt(i++, DUM.matrix); }
+  R.spots.count = i; R.spots.instanceMatrix.needsUpdate = true; UI.spotN = i;
+}
 function setRadius(cx, cz, r) { if (!r) { R.radius.visible = false; return; } const p = R.radius.geometry.attributes.position.array, n = W.n; for (let i = 0; i < 97; i++) { const a = i / 96 * 6.2832, x = clamp(cx + Math.cos(a) * r, 0, n - 0.01), z = clamp(cz + Math.sin(a) * r, 0, n - 0.01); p[i * 3] = x; p[i * 3 + 1] = Math.max(heightAt(x, z), WATER_Y) + 0.15; p[i * 3 + 2] = z; } R.radius.geometry.attributes.position.needsUpdate = true; R.radius.visible = true; }
 function updateSelection() {
   const s = R.sel; R.selRing.visible = false; R.selBox.visible = false; if (!s) { if (!R.keepRadius) R.radius.visible = false; return; }
@@ -2665,9 +2676,10 @@ function drawSub() {
   s.innerHTML = h; s.hidden = false; layoutVars();
 }
 function setTool(id) {
-  UI.drag = null; R.keepRadius = false; setGhost(null); R.radius.visible = false;
+  UI.drag = null; R.keepRadius = false; setGhost(null); R.radius.visible = false; showSpots(null);
   if (!id) { UI.tool = null; $('tip').hidden = true; return; }
   const [k, v] = id.split(':'); UI.tool = { id, k, v }; UI.sel = null; R.sel = null; $('panel').hidden = true; tip();
+  UI.snapKey = null; UI.spotT = 0; if (k === 'b' && BUILD[v] && BUILD[v].needs) showSpots(v); else showSpots(null);
 }
 function tip(extra, bad) {
   const t = UI.tool; if (!t) { $('tip').hidden = true; return; } let s = '';
@@ -2721,6 +2733,17 @@ function applyDrag(d) {
     if (D.tool) { const c = planRoad(roadTiles(d), t.v === 'sroad' ? 2 : 1); Sfx.play(c ? 'place' : 'error'); }
     else { const [x, y, w, h] = areaRect(d, D), err = checkPlace(t.v, x, y, w, h, 0); if (err) { tip(err, true); Sfx.play('error'); } else { const b = placeBuilding(t.v, x, y, w, h, 0); Sfx.play('place'); setTool(null); drawSub(); select({ k: 'b', id: b.id }); } } }
 }
+function snapSpot(type, tx, ty, rot0, rad) { // 游標附近最接近的合法位置（含四個方向）
+  let best = null, bd = 1e9;
+  for (let dy = -rad; dy <= rad; dy++) for (let dx = -rad; dx <= rad; dx++) { const dd = dx * dx + dy * dy; if (dd > rad * rad || dd > bd) continue;
+    for (let q = 0; q < 4; q++) { const rot = (rot0 + q) % 4, [w, d] = dimsOf(type, rot), x = tx + dx - (w >> 1), y = ty + dy - (d >> 1); if (checkPlace(type, x, y, w, d, rot)) continue; const sc = dd + q * 0.01; if (sc < bd) { bd = sc; best = { x, y, w, d, rot, err: null, snapped: dd > 0 || q > 0 }; } break; } }
+  return best;
+}
+function validSpots(type) { // 全地圖可蓋位置（相近的合併成一個標記）
+  const out = [], n = W.n, taken = new Uint8Array(n * n);
+  for (let y = 1; y < n - 1; y++) for (let x = 1; x < n - 1; x++) for (let rot = 0; rot < 4; rot++) { const [w, d] = dimsOf(type, rot); if (checkPlace(type, x, y, w, d, rot)) continue; const cx = Math.floor(x + w / 2), cy = Math.floor(y + d / 2); let near = false; for (let j = -2; j <= 2 && !near; j++) for (let i = -2; i <= 2; i++) { const X = cx + i, Y = cy + j; if (X >= 0 && Y >= 0 && X < n && Y < n && taken[Y * n + X]) { near = true; break; } } if (near) continue; taken[cy * n + cx] = 1; out.push([x + w / 2, y + d / 2]); break; }
+  return out;
+}
 function updateGhost() {
   const t = UI.tool; UI.place = null; if (!t) return; const g = UI.hover, n = W.n;
   if (UI.drag) { const d = UI.drag, tiles = [];
@@ -2730,11 +2753,13 @@ function updateGhost() {
     setGhost(tiles); return; }
   if (!g) { setGhost(null); return; }
   if (t.k === 'b' && !BUILD[t.v].area && !BUILD[t.v].tool) { const D = BUILD[t.v]; let best = null;
-    for (let q = 0; q < (D.needs ? 4 : 1); q++) { const rot = (UI.rot + q) % 4, [w, d] = dimsOf(t.v, rot), x = g.tx - (w >> 1), y = g.ty - (d >> 1), err = checkPlace(t.v, x, y, w, d, rot); if (!best || !err) best = { x, y, w, d, rot, err }; if (!err) break; }
-    const tiles = []; for (let j = best.y; j < best.y + best.d; j++) for (let i = best.x; i < best.x + best.w; i++) { const k = j * n + i, inb = i > 0 && j > 0 && i < n - 1 && j < n - 1; tiles.push([i, j, inb && W.tt[k] === 0 && !W.occ[k] && !best.err]); }
+    if (D.needs) { const key = [t.v, g.tx, g.ty, UI.rot, G.bld.length, Object.keys(G.roadJobs).length].join(','); if (UI.snapKey !== key) { UI.snapKey = key; UI.snapRes = snapSpot(t.v, g.tx, g.ty, UI.rot, 6); } best = UI.snapRes; }
+    if (!best) for (let q = 0; q < (D.needs ? 4 : 1); q++) { const rot = (UI.rot + q) % 4, [w, d] = dimsOf(t.v, rot), x = g.tx - (w >> 1), y = g.ty - (d >> 1), err = checkPlace(t.v, x, y, w, d, rot); if (!best || !err) best = { x, y, w, d, rot, err }; if (!err) break; }
+    if (D.needs && best.err) best.err = (D.needs === 'rock' ? '附近沒有合適的山壁' : '附近沒有合適的水岸') + '：請把游標移到綠色標記附近';
+    const tiles = []; for (let j = best.y; j < best.y + best.d; j++) for (let i = best.x; i < best.x + best.w; i++) { const k = j * n + i, inb = i > 0 && j > 0 && i < n - 1 && j < n - 1; tiles.push([i, j, inb && !best.err && (W.tt[k] === 0 || (W.tt[k] === 1 && D.needs && D.needs !== 'rock')) && !W.occ[k]]); }
     UI.place = best; setGhost(tiles, null, { type: t.v, x: best.x, y: best.y, w: best.w, d: best.d, rot: best.rot, ok: !best.err });
     if (D.radius) { R.keepRadius = true; setRadius(best.x + best.w / 2, best.y + best.d / 2, D.radius); }
-    if (best.err !== UI.lastErr) { UI.lastErr = best.err; tip(best.err, true); } }
+    const msg = best.err || (best.snapped ? '已自動對準可建造的位置' : null); if (msg !== UI.lastErr) { UI.lastErr = msg; tip(msg, !!best.err); } }
   else setGhost([[g.tx, g.ty, 1]]);
 }
 function onKey(e) {
@@ -3024,6 +3049,7 @@ function showSetup() {
 }
 function uiTick(dt, sdt) {
   keysTick(dt); updateGhost();
+  if (UI.tool && UI.tool.k === 'b' && BUILD[UI.tool.v] && BUILD[UI.tool.v].needs) { UI.spotT += dt; if (UI.spotT > 2) { UI.spotT = 0; showSpots(UI.tool.v); } }
   if (UI.follow && UI.sel && UI.sel.k === 'c') { const c = CI.get(UI.sel.id); if (c) { R.ct.x = c.x; R.ct.z = c.y; } }
   UI.tAcc += dt; if (UI.tAcc > 0.25) { UI.tAcc = 0; drawTop(); drawFeed(); updateBadge(); }
   UI.pAcc += dt; if (UI.pAcc > 0.5) { UI.pAcc = 0; if (UI.sel) drawPanel(); if (UI.modal === 'people' || UI.modal === 'jobs' || (UI.modal === 'stats' && (UI.tab === 'ov' || UI.tab === 'inv'))) { if (performance.now() - (UI.winT || 0) > 700) drawModal(); } layoutVars(); }
