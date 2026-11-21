@@ -97,6 +97,10 @@ canvas.chart { width: 100%; height: 150px; display: block; background: #1b1814; 
 .numin { width: 64px; text-align: right; font-variant-numeric: tabular-nums; } .numin::-webkit-inner-spin-button { opacity: .5; }
 .fkg { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 2px 10px; margin: 4px 0; } .fk { display: flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; } .fk small { color: var(--dim); font-size: 11px; }
 .subsep { width: 1px; align-self: stretch; background: var(--edge); margin: 0 4px; flex: none; }
+.rng { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; justify-content: flex-end; min-width: 0; }
+.rng input[type=range] { width: 220px; max-width: 100%; accent-color: var(--ochre); min-width: 0; touch-action: pan-x; }
+.rng b { min-width: 3.2em; text-align: right; }
+@media (max-width: 640px) { .rngrow { flex-direction: column; align-items: stretch; gap: 4px; } .rngrow .rng { justify-content: stretch; } .rng input[type=range] { width: auto; flex: 1 1 auto; height: 28px; } }
 kbd { border: 1px solid var(--edge2); border-radius: 2px; padding: 0 5px; font-family: inherit; background: var(--ink); }
 @media (max-width: 640px) { body { font-size: 12.5px; } #panel { top: auto; bottom: calc(var(--barH, 96px) + 8px); max-height: 46%; right: max(16px, env(safe-area-inset-right, 0px)); } #warn { max-width: 62vw; } #feed { display: none; } .seal { min-width: 46px; } #setup { align-items: center; } #setup h1 { font-size: 26px; } }
 @media (prefers-reduced-motion: reduce) { .f { transition: none; } }
@@ -123,7 +127,7 @@ kbd { border: 1px solid var(--edge2); border-radius: 2px; padding: 0 5px; font-f
 // ═══ data.js ═══
 'use strict';
 // ───────────────────────── 常數與資料表 ─────────────────────────
-const VERSION = '0.05';      // 遊戲版本（每次發佈加 0.01）
+const VERSION = '0.06';      // 遊戲版本（每次發佈加 0.01）
 const YEAR = 600;          // 一年 = 600 模擬秒（1x 速度下 10 分鐘，10x 下 1 分鐘）
 const AGE_RATE = 3;        // 居民每曆年老化 3 歲
 const CARRY = 100;         // 居民負重上限
@@ -2301,21 +2305,21 @@ if (typeof module !== 'undefined') module.exports = Sfx;
 
 // ═══ render.js ═══
 // ───────────────────────── 3D 渲染：地形、四季、樹木、建築、居民、特效 ─────────────────────────
-const R = { ready: false, uSnow: { value: 0 }, uTime: { value: 0 }, bm: new Map(), herd: {}, sel: null, shadows: true, tAcc: 0 };
+const R = { ready: false, uSnow: { value: 0 }, uSnowB: { value: 0.85 }, uTime: { value: 0 }, bm: new Map(), herd: {}, sel: null, shadows: true, tAcc: 0 };
 const lin = (h) => new THREE.Color(h).convertSRGBToLinear();
 const TMPC = new THREE.Color(), DUM = new THREE.Object3D(), ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 function snowify(mat, wind) {
   mat.onBeforeCompile = (sh) => {
-    sh.uniforms.uSnow = R.uSnow; sh.uniforms.uTime = R.uTime; sh.uniforms.uSnowV = R.uSnow;
+    sh.uniforms.uSnow = R.uSnow; sh.uniforms.uSnowB = R.uSnowB; sh.uniforms.uTime = R.uTime; sh.uniforms.uSnowV = R.uSnow;
     sh.vertexShader = 'varying float vSnowF;\nuniform float uTime;\nuniform float uSnowV;\n' + sh.vertexShader.replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\n vSnowF = objectNormal.y;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + (wind ? '#ifdef USE_INSTANCING\n float ph = instanceMatrix[3].x*0.21+instanceMatrix[3].z*0.16; float hs = length(instanceMatrix[1].xyz); float gust = 0.6 + 0.4*sin(uTime*0.23+instanceMatrix[3].x*0.05); float amp = 0.022*hs*gust*(1.0-0.7*uSnowV); transformed.x += sin(uTime*0.9-ph)*amp*max(transformed.y,0.0); transformed.z += sin(uTime*0.7-ph*0.8)*amp*0.6*max(transformed.y,0.0);\n#endif\n' : ''));
-    sh.fragmentShader = 'varying float vSnowF;\nuniform float uSnow;\n' + sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.43,0.46,0.52), clamp(uSnow*1.1,0.0,0.82) * smoothstep(0.3,0.78,vSnowF));');
+    sh.fragmentShader = 'varying float vSnowF;\nuniform float uSnow;\nuniform float uSnowB;\n' + sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.43,0.46,0.52)*uSnowB, clamp(uSnow*1.1,0.0,0.82) * smoothstep(0.3,0.78,vSnowF));');
   };
   mat.customProgramCacheKey = () => (wind ? 'snowW' : 'snow'); return mat;
 }
 function initRender(canvas) {
   const r = R.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-  r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2)); r.outputEncoding = THREE.sRGBEncoding; r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap;
+  r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2)); r.toneMapping = THREE.LinearToneMapping; r.toneMappingExposure = 1; r.outputEncoding = THREE.sRGBEncoding; r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap;
   R.scene = new THREE.Scene(); R.scene.fog = new THREE.Fog(0xa9bcc4, 60, 260); R.scene.background = new THREE.Color(0xa9bcc4);
   R.cam = new THREE.PerspectiveCamera(32, 1, 1, 900); R.c = { x: 64, z: 64, dist: 60, az: 0.6, pol: 0.9 }; R.ct = Object.assign({}, R.c);
   R.hemi = new THREE.HemisphereLight(0xcfd8dc, 0x6b6250, 0.62); R.scene.add(R.hemi);
@@ -2336,6 +2340,9 @@ function initRender(canvas) {
   const sg = new THREE.RingGeometry(0.55, 0.9, 20); sg.rotateX(-Math.PI / 2); R.spots = new THREE.InstancedMesh(sg, new THREE.MeshBasicMaterial({ color: 0x9fd07a, transparent: true, opacity: 0.85, depthTest: false }), 500); R.spots.count = 0; R.spots.frustumCulled = false; R.spots.renderOrder = 6; R.scene.add(R.spots);
   initParticles(); R.ready = true; resizeRender();
 }
+const DISP = { bright: 1, snow: 0.85 }; // 顯示設定（只存在這個瀏覽器）
+function loadDisplay() { try { const d = JSON.parse(localStorage.getItem('hvale_display') || 'null'); if (d) { if (d.bright > 0) DISP.bright = d.bright; if (d.snow > 0) DISP.snow = d.snow; } } catch (e) { } applyDisplay(); }
+function applyDisplay(save) { if (R.renderer) R.renderer.toneMappingExposure = DISP.bright; R.uSnowB.value = DISP.snow; if (save) try { localStorage.setItem('hvale_display', JSON.stringify(DISP)); } catch (e) { } }
 function resizeRender() { const c = R.renderer.domElement, w = c.clientWidth || window.innerWidth, h = c.clientHeight || window.innerHeight; R.renderer.setSize(w, h, false); R.cam.aspect = w / h; R.cam.updateProjectionMatrix(); R.w = w; R.h = h; }
 
 // ── 世界網格 ──
@@ -2665,7 +2672,7 @@ function initUI() {
   $('warn').onclick = (e) => { const w = e.target.closest('.w'); if (!w) return; const o = G.warn[+w.dataset.i]; if (!o) return; if (o.nomad) openModal('nomad'); else if (o.trade) openModal('trade'); else jumpTo(o.x, o.y); };
   $('feed').onclick = (e) => { const f = e.target.closest('.f'); if (f && f.dataset.x) jumpTo(+f.dataset.x, +f.dataset.y); };
   $('panel').onclick = panelClick; $('panel').onchange = panelChange;
-  $('win').onclick = modalClick; $('win').onchange = modalChange; $('win').oninput = (e) => { if (UI.modal === 'trade') tradeSum(); else if (UI.modal === 'auto' && e.target.classList.contains('numin') && e.target.value !== '') modalChange(e); };
+  $('win').onclick = modalClick; $('win').onchange = modalChange; $('win').oninput = (e) => { if (e.target.id === 'setBright' || e.target.id === 'setSnow') { const v = +e.target.value / 100; if (e.target.id === 'setBright') DISP.bright = v; else DISP.snow = v; $(e.target.id + 'V').textContent = Math.round(v * 100) + '%'; applyDisplay(true); return; } if (UI.modal === 'trade') tradeSum(); else if (UI.modal === 'auto' && e.target.classList.contains('numin') && e.target.value !== '') modalChange(e); };
   $('modal').onpointerdown = (e) => { if (e.target === $('modal')) closeModal(); };
   for (const ev of ['pointerdown', 'touchstart']) $('win').addEventListener(ev, () => { UI.winT = performance.now(); }, { passive: true });
   const cv = $('gl');
@@ -2933,7 +2940,10 @@ function drawModal() {
   else if (k === 'over') h += `<h1>聚落沉寂了</h1><p>第 ${yearOf()} 年，最後一位居民離開了人世。荒野將慢慢收回這片土地。</p><div class="btns"><button data-a="new" class="on">重新開始</button><button data-a="m" data-v="stats">檢視紀錄</button></div>`;
   else if (k === 'menu') { const slots = [0, 1, 2, 3].map(i => { let m = null; try { m = JSON.parse(localStorage.getItem('hvale_meta_' + i) || 'null'); } catch (e) { } return m; });
     h += `<h1>選單 <small class="ver">荒谷紀年 v${VERSION}</small></h1><h3>存檔（保存在這個瀏覽器中）</h3>${slots.map((m, i) => `<div class="row"><span>${i ? '存檔 ' + i : '自動存檔'}</span><span>${m ? `第 ${m.y} 年・人口 ${m.pop}` : '—'}　<span class="step">${i ? `<button data-a="save" data-v="${i}">儲存</button>` : ''}<button data-a="load" data-v="${i}" ${m ? '' : 'disabled'}>讀取</button></span></span></div>`).join('')}<div class="sub" id="saveMsg"></div>
-    <h3>設定</h3><div class="row"><span>陰影</span><button data-a="shadow" class="${R.shadows ? 'on' : ''}">${R.shadows ? '開' : '關'}</button></div><div class="row"><span>音效</span><button data-a="snd" class="${Sfx.sound ? 'on' : ''}">${Sfx.sound ? '開' : '關'}</button></div><div class="row"><span>音樂</span><button data-a="mus" class="${Sfx.music ? 'on' : ''}">${Sfx.music ? '開' : '關'}</button></div>
+    <h3>設定</h3><div class="row rngrow"><label for="setBright">畫面亮度</label><span class="rng"><input type="range" id="setBright" min="50" max="140" step="5" value="${Math.round(DISP.bright * 100)}"><b id="setBrightV" class="num">${Math.round(DISP.bright * 100)}%</b></span></div>
+    <div class="row rngrow"><label for="setSnow">雪地亮度</label><span class="rng"><input type="range" id="setSnow" min="40" max="120" step="5" value="${Math.round(DISP.snow * 100)}"><b id="setSnowV" class="num">${Math.round(DISP.snow * 100)}%</b></span></div>
+    <div class="btns"><button data-a="dispReset">恢復預設亮度</button><span class="sub">只影響這個瀏覽器，會自動記住。</span></div>
+    <div class="row"><span>陰影</span><button data-a="shadow" class="${R.shadows ? 'on' : ''}">${R.shadows ? '開' : '關'}</button></div><div class="row"><span>音效</span><button data-a="snd" class="${Sfx.sound ? 'on' : ''}">${Sfx.sound ? '開' : '關'}</button></div><div class="row"><span>音樂</span><button data-a="mus" class="${Sfx.music ? 'on' : ''}">${Sfx.music ? '開' : '關'}</button></div>
     <h3>操作</h3><div class="cols"><div><div class="row"><span>平移</span><span>左鍵拖曳、<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span></div><div class="row"><span>旋轉／俯仰</span><span>右鍵拖曳、<kbd>Q</kbd><kbd>E</kbd></span></div><div class="row"><span>縮放</span><span>滾輪／雙指</span></div></div><div><div class="row"><span>旋轉建築</span><kbd>R</kbd></div><div class="row"><span>居民狀態</span><kbd>P</kbd></div><div class="row"><span>暫停</span><kbd>空白鍵</kbd></div><div class="row"><span>速度</span><span><kbd>1</kbd>–<kbd>4</kbd></span></div><div class="row"><span>連續放置</span><span>按住 <kbd>Shift</kbd></span></div></div></div>
     <h3>拓荒須知</h3><div class="sub">先以「清理移除」標記附近的樹木與石塊取得建材，再蓋住宅、採集小屋與劈柴棚。原木要經劈柴棚加工才能取暖；保留足夠的一般勞工搬運物資；春播、秋收、冬藏。糧倉與堆料場離工作地點越近，效率越高。</div>
     <h3>匯出與匯入</h3><div class="sub">可把目前的聚落存成檔案或文字，帶到別的瀏覽器繼續玩，或傳給別人分析。下載時網頁版會先跳出確認視窗；若還是無法下載，請改用「複製存檔文字」。</div>
@@ -2969,6 +2979,7 @@ function modalClick(e) {
   else if (a === 'importPaste') { const txt = $('importText').value.trim(); if (!txt) { $('ioMsg').textContent = '請先貼上存檔文字。'; return; } if (importSave(txt)) closeModal(); else $('ioMsg').textContent = '無法讀取：這段文字不是完整的存檔。'; return; }
   else if (a === 'save') { const ok = storeSave(+v); drawModal(); $('saveMsg').textContent = ok ? '已儲存。' : '無法寫入瀏覽器儲存空間。'; return; }
   else if (a === 'load') { if (storeLoad(+v)) { closeModal(); return; } $('saveMsg').textContent = '讀取失敗。'; return; }
+  else if (a === 'dispReset') { DISP.bright = 1; DISP.snow = 0.85; applyDisplay(true); }
   else if (a === 'shadow') R.shadows = !R.shadows; else if (a === 'snd') Sfx.setEnabled(!Sfx.sound, Sfx.music); else if (a === 'mus') Sfx.setEnabled(Sfx.sound, !Sfx.music);
   else if (a === 'new') { closeModal(); showSetup(); return; }
   drawModal();
@@ -3092,7 +3103,7 @@ function frame(now) {
   if (G.autosave && playing) { G.autosave = false; storeSave(0); }
 }
 function boot(data) {
-  try { initRender($('gl')); } catch (e) { console.error(e); $('setupWin').innerHTML = '<h1>荒谷紀年</h1><div class="lede">這個瀏覽器無法啟動 3D 繪圖（WebGL）。請確認瀏覽器已開啟「硬體加速」，或改用最新版的 Chrome、Edge、Firefox。</div><div class="sub">' + esc(e && e.message || e) + '</div>'; return; }
+  try { initRender($('gl')); loadDisplay(); } catch (e) { console.error(e); $('setupWin').innerHTML = '<h1>荒谷紀年</h1><div class="lede">這個瀏覽器無法啟動 3D 繪圖（WebGL）。請確認瀏覽器已開啟「硬體加速」，或改用最新版的 Chrome、Edge、Firefox。</div><div class="sub">' + esc(e && e.message || e) + '</div>'; return; }
   initUI();
   let ok = false; if (data && data.save) { try { loadGame(data.save); buildWorldMeshes(); focusStart(); showHud(); ok = true; } catch (e) { console.error(e); } }
   if (!ok) { SETUP.seed = 1 + Math.floor(Math.random() * 999999); previewWorld(); showSetup(); }
