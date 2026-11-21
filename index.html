@@ -96,6 +96,7 @@ canvas.chart { width: 100%; height: 150px; display: block; background: #1b1814; 
 .ver { font-size: 13px; font-weight: 400; letter-spacing: .04em; color: var(--dim); margin-left: 6px; }
 .numin { width: 64px; text-align: right; font-variant-numeric: tabular-nums; } .numin::-webkit-inner-spin-button { opacity: .5; }
 .fkg { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 2px 10px; margin: 4px 0; } .fk { display: flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; } .fk small { color: var(--dim); font-size: 11px; }
+.subsep { width: 1px; align-self: stretch; background: var(--edge); margin: 0 4px; flex: none; }
 kbd { border: 1px solid var(--edge2); border-radius: 2px; padding: 0 5px; font-family: inherit; background: var(--ink); }
 @media (max-width: 640px) { body { font-size: 12.5px; } #panel { top: auto; bottom: calc(var(--barH, 96px) + 8px); max-height: 46%; right: max(16px, env(safe-area-inset-right, 0px)); } #warn { max-width: 62vw; } #feed { display: none; } .seal { min-width: 46px; } #setup { align-items: center; } #setup h1 { font-size: 26px; } }
 @media (prefers-reduced-motion: reduce) { .f { transition: none; } }
@@ -122,7 +123,7 @@ kbd { border: 1px solid var(--edge2); border-radius: 2px; padding: 0 5px; font-f
 // ═══ data.js ═══
 'use strict';
 // ───────────────────────── 常數與資料表 ─────────────────────────
-const VERSION = '0.04';      // 遊戲版本（每次發佈加 0.01）
+const VERSION = '0.05';      // 遊戲版本（每次發佈加 0.01）
 const YEAR = 600;          // 一年 = 600 模擬秒（1x 速度下 10 分鐘，10x 下 1 分鐘）
 const AGE_RATE = 3;        // 居民每曆年老化 3 歲
 const CARRY = 100;         // 居民負重上限
@@ -1093,13 +1094,17 @@ const JOBS = {
       }
     }
     const w = invW(b);
-    if (w >= 60 || (w > 0 && b.care > 0.8)) { let r = null; for (const k in b.inv) { r = k; break; } const dest = findStore(b.ex, b.ey, r, reg); if (!dest) return full(c, r);
+    if (w >= 60 || (w > 0 && b.care > 0.8)) { let r = null; for (const k in b.inv) { r = k; break; } const dest = findStore(b.ex, b.ey, r, reg); if (!dest) { G.fullT = G.t; G.fullCls = RES[r].cls; } else
       return setPlan(c, [goB(b, '前往牧場'), act(c => { for (const k in b.inv) { const a = Math.min(b.inv[k], Math.floor((CARRY - carryW(c)) / RES[k].w)); if (a > 0) carryAdd(c, k, takeInv(b, k, a)); } }), goB(dest, '運送畜產品'), deposit(dest)]); }
     const x = b.x + ri(b.w), y = b.y + ri(b.d), f = yfrac();
     if (A.by === 'wool' && f > 0.15 && f < 0.45 && b.sheared !== yearOf() && b.count > 0) return setPlan(c, [go(x, y, '前往牧場'), work(6, 5, '剪羊毛'), act(c => { if (b.sheared === yearOf()) return; b.sheared = yearOf(); const a = Math.round(b.count * A.byRate); addInv(b, 'wool', a); prod('wool', a, b); })]);
-    if (b.count > Math.max(2, b.cap * 0.85) && b.split !== false) { // 先試著分群到其他未滿的同種牧場
-      let dst = null; for (const o of G.bld) if (o.type === 'pasture' && o !== b && o.st === 'ok' && o.animal === b.animal && o.count > 0 && o.count < Math.floor(o.w * o.d / A.tiles) * 0.5 && (!dst || o.count < dst.count)) dst = o;
-      if (dst && canReach(c, dst.ex, dst.ey)) return setPlan(c, [go(x, y, '前往牧場'), work(3, 5, '挑選牲畜', true), act(c => { const room = Math.floor(dst.w * dst.d / A.tiles) - dst.count, k = Math.min(room, Math.floor(b.count * 0.3)); if (k < 1) return false; b.count -= k; b.gd = true; c.herdMove = { a: b.animal, k }; }), goB(dst, '把牲畜趕到其他牧場'), act(c => { const m = c.herdMove; c.herdMove = null; if (!m || dst.gone) { if (m) b.count += m.k; return; } dst.count += m.k; dst.gd = true; logEv(`牧場滿了，牧民把 ${m.k} 隻${ANIMALS[m.a].n}分到另一座牧場。`, 'info', dst.ex, dst.ey); })]);
+    // 分群目標：空牧場（未指定種類，或指定的就是這種牲畜）優先，其次是未過半的同種牧場
+    const emptyOk = (o) => o.count <= 0 && (o.animal === b.animal || !o.animalSet) && !((G.herd[o.animal] || 0) > 0 && o.animal !== b.animal);
+    const splitDst = () => { let dst = null, ds = 1e9; for (const o of G.bld) { if (o.type !== 'pasture' || o === b || o.st !== 'ok') continue; const oc = Math.floor(o.w * o.d / A.tiles); let sc; if (emptyOk(o)) sc = 0; else if (o.animal === b.animal && o.count > 0 && o.count < oc * 0.5) sc = 1 + o.count / oc; else continue; if (sc < ds) { ds = sc; dst = o; } } return dst; };
+    const wantSplit = b.split !== false && (b.splitNow || b.count > Math.max(2, b.cap * 0.85) || (b.count >= Math.max(6, b.cap * 0.6) && G.bld.some(o => o.type === 'pasture' && o !== b && o.st === 'ok' && emptyOk(o))));
+    if (wantSplit && b.count >= 4) {
+      const dst = splitDst(); if (!dst) b.splitNow = false;
+      if (dst && canReach(c, dst.ex, dst.ey)) return setPlan(c, [go(x, y, '前往牧場'), work(3, 5, '挑選牲畜', true), act(c => { const room = Math.floor(dst.w * dst.d / A.tiles) - dst.count, k = Math.min(room, Math.floor(b.count * (dst.count <= 0 ? 0.4 : 0.3))); b.splitNow = false; if (k < 2) return false; b.count -= k; b.gd = true; c.herdMove = { a: b.animal, k }; }), goB(dst, '把牲畜趕到其他牧場'), act(c => { const m = c.herdMove; c.herdMove = null; if (!m || dst.gone || (dst.count > 0 && dst.animal !== m.a)) { if (m) { b.count += m.k; b.gd = true; } return; } const wasEmpty = dst.count <= 0; dst.animal = m.a; dst.count += m.k; dst.gd = true; logEv(wasEmpty ? `牧民把 ${m.k} 隻${ANIMALS[m.a].n}分到空牧場，讓兩邊一起繁殖。` : `牧場滿了，牧民把 ${m.k} 隻${ANIMALS[m.a].n}分到另一座牧場。`, 'info', dst.ex, dst.ey); })]);
     }
     if (b.count > Math.max(2, b.cap * 0.88) && b.slaughter !== false) return setPlan(c, [go(x, y, '前往牧場'), work(4, 5, '屠宰牲畜'), act(c => { if (b.count <= 2) return; b.count--; b.gd = true; addInv(b, A.meat, A.meatAmt); prod(A.meat, A.meatAmt, b); if (A.leather) { addInv(b, 'leather', A.leather); prod('leather', A.leather, b); } })]);
     if ((b.care || 0) < 0.85) return setPlan(c, [go(x, y, '前往牧場'), work(4, 5, '照料牲畜'), act(c => { b.care = Math.min(1, (b.care || 0) + 0.3); })]);
@@ -1215,8 +1220,8 @@ function planLabor(c, clearOnly) {
     return setPlan(c, [goB(s, '領取建材：' + RES[r].n), act(c => { const g = takeInv(s, r, a); if (g <= 0) return false; carryAdd(c, r, g); }), go(b.ex, b.ey, '搬運建材至工地', !(BUILD[b.type].area || BUILD[b.type].flat)), act(c => { const S2 = siteOf(b); if (b.gone || !S2) return false; const g = c.carry[r] || 0; S2.got[r] = (S2.got[r] || 0) + g; S2.inc[r] = Math.max(0, (S2.inc[r] || 0) - a); c.incS = null; delete c.carry[r]; cons(r, g); b.dirty = true; })]); }
   if (best && best.k === 'clear') return planClear(c, best.i);
   // 玩家標記的清理區
-  if (G.marks.length) { let bi = -1, bd = 1e9; const st = ri(G.marks.length), m = Math.min(G.marks.length, 160);
-    for (let q = 0; q < m; q++) { const ix = (st + q) % G.marks.length, i = G.marks[ix]; if (!W.mark[i] || (!W.treeAt[i] && !W.rockAt[i])) { G.marks.splice(ix, 1); W.mark[i] = 0; q--; if (!G.marks.length) break; continue; } const t = W.treeAt[i], r = W.rockAt[i]; if (t && W.tClaim[t - 1] && CI.has(W.tClaim[t - 1])) continue; if (r && W.rClaim[r - 1] && CI.has(W.rClaim[r - 1])) continue; const d = dist(c.x, c.y, i % n, (i / n) | 0); if (d < bd && canReach(c, i % n, (i / n) | 0, true)) { bd = d; bi = i; } }
+  if (G.marks.length) { let bi = -1, bd = 1e9; const st = ri(G.marks.length), m = Math.min(G.marks.length, G.markPri && G.markPri !== 'none' ? 1200 : 160);
+    for (let q = 0; q < m; q++) { const ix = (st + q) % G.marks.length, i = G.marks[ix]; if (!W.mark[i] || (!W.treeAt[i] && !W.rockAt[i])) { G.marks.splice(ix, 1); W.mark[i] = 0; q--; if (!G.marks.length) break; continue; } const t = W.treeAt[i], r = W.rockAt[i]; if (t && W.tClaim[t - 1] && CI.has(W.tClaim[t - 1])) continue; if (r && W.rClaim[r - 1] && CI.has(W.rClaim[r - 1])) continue; const d = dist(c.x, c.y, i % n, (i / n) | 0) + ((G.markPri === 'rock' && t) || (G.markPri === 'tree' && r) ? 10000 : 0); if (d < bd && canReach(c, i % n, (i / n) | 0, true)) { bd = d; bi = i; } }
     if (bi >= 0) return planClear(c, bi); }
   if (clearOnly) return false;
   // 撿拾散落物資
@@ -2655,7 +2660,7 @@ function initUI() {
   drawCtl();
   $('cats').innerHTML = CATS.map(([k, n, ic]) => `<button class="seal" data-cat="${k}"><em>${ic}</em><span>${n}</span></button>`).join('');
   $('cats').onclick = (e) => { const b = e.target.closest('[data-cat]'); if (!b) return; Sfx.play('click'); UI.cat = UI.cat === b.dataset.cat ? null : b.dataset.cat; setTool(null); drawSub(); };
-  $('sub').onclick = (e) => { const b = e.target.closest('[data-t]'); if (!b) return; Sfx.play('click'); const t = b.dataset.t; if (t === 'm:jobs' || t === 'm:stats' || t === 'm:log' || t === 'm:people') { openModal(t.slice(2)); return; } setTool(UI.tool && UI.tool.id === t ? null : t); drawSub(); };
+  $('sub').onclick = (e) => { const b = e.target.closest('[data-t]'); if (!b) return; Sfx.play('click'); const t = b.dataset.t; if (t === 'm:jobs' || t === 'm:stats' || t === 'm:log' || t === 'm:people') { openModal(t.slice(2)); return; } if (t.startsWith('pri:')) { G.markPri = t.slice(4); drawSub(); const nm = { none: '不限，先挖近的', rock: '優先採集石頭', tree: '優先砍伐樹木' }[G.markPri]; $('tip').innerHTML = `<b>採集順序</b>　${nm}（只影響已標記的樹木與石塊）`; $('tip').hidden = false; return; } setTool(UI.tool && UI.tool.id === t ? null : t); drawSub(); };
   $('ctl').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; Sfx.play('click'); if (b.dataset.sp != null) setSpeed(+b.dataset.sp); else openModal(b.dataset.m); };
   $('warn').onclick = (e) => { const w = e.target.closest('.w'); if (!w) return; const o = G.warn[+w.dataset.i]; if (!o) return; if (o.nomad) openModal('nomad'); else if (o.trade) openModal('trade'); else jumpTo(o.x, o.y); };
   $('feed').onclick = (e) => { const f = e.target.closest('.f'); if (f && f.dataset.x) jumpTo(+f.dataset.x, +f.dataset.y); };
@@ -2675,7 +2680,7 @@ function drawSub() {
   for (const b of $('cats').children) b.classList.toggle('on', b.dataset.cat === UI.cat);
   const s = $('sub'); if (!UI.cat) { s.hidden = true; layoutVars(); return; } let h = '';
   const btn = (id, ic, n, sm) => `<button class="seal ${UI.tool && UI.tool.id === id ? 'on' : ''}" data-t="${id}"><em>${ic}</em><span>${n}</span>${sm ? `<small>${sm}</small>` : ''}</button>`;
-  if (UI.cat === 'tools') h = btn('mark:tree', '伐', '採集樹木') + btn('mark:rock', '石', '採集石塊') + btn('mark:all', '採', '全部採集') + btn('unmark', '止', '取消標記') + btn('demolish', '拆', '拆除建築') + btn('unroad', '剷', '移除道路');
+  if (UI.cat === 'tools') h = btn('mark:tree', '伐', '採集樹木') + btn('mark:rock', '石', '採集石塊') + btn('mark:all', '採', '全部採集') + btn('unmark', '止', '取消標記') + btn('demolish', '拆', '拆除建築') + btn('unroad', '剷', '移除道路') + `<span class="subsep"></span>` + [['none', '均', '不限'], ['rock', '岩', '優先石頭'], ['tree', '木', '優先木頭']].map(([k, ic, nm]) => `<button class="seal ${(G.markPri || 'none') === k ? 'on' : ''}" data-t="pri:${k}" title="勞工採集標記物時的優先順序"><em>${ic}</em><span>${nm}</span><small>採集順序</small></button>`).join('');
   else { for (const k in BUILD) { const D = BUILD[k]; if (D.cat !== UI.cat) continue; const c = D.cost || {}; h += btn('b:' + k, D.ic, D.n, [c.log ? '木' + c.log : '', c.stone ? '石' + c.stone : '', c.iron ? '鐵' + c.iron : ''].filter(Boolean).join(' ') || (D.area ? '拖曳' : '')); }
     if (UI.cat === 'admin') h += btn('m:people', '民', '居民狀態') + btn('m:jobs', '職', '職業管理') + btn('m:stats', '統', '城鎮統計') + btn('m:log', '紀', '歷史紀事'); }
   s.innerHTML = h; s.hidden = false; layoutVars();
@@ -2821,7 +2826,7 @@ function drawPanel(force) {
       if (b.type === 'field') { let gs = 0, sown = 0, ripe = 0; for (const v of b.g) { if (v >= 0) { sown++; gs += Math.min(1, v); if (v >= 1) ripe++; } } const nT = b.g.length;
         h += `${cropSel(b)}<div class="row"><span>已播種</span><span>${sown} / ${nT} 格</span></div><div class="row"><span>生長</span>${bar(sown ? gs / sown : 0)}</div><div class="row"><span>照料</span>${bar(b.tend)}</div>${b.blight ? '<div class="row"><span>病害</span><b style="color:var(--madder)">收成將大減</b></div>' : ''}<div class="row"><span>預估滿收</span><span>${fmt(nT * CROPS[b.crop].y)}</span></div>`; }
       if (b.type === 'orchard') { const al = b.slots.filter(s => s.age >= 0).length, mt = b.slots.filter(s => s.age >= 3).length; h += `${fruitSel(b)}<div class="row"><span>樹木</span><span>${al} / ${b.slots.length} 棵（結果 ${mt}）</span></div><div class="row"><span>果實成熟</span>${bar(b.ripe)}</div>` + (al ? '<div class="sub">更換品種會清除現有果樹並重新種植。</div>' : ''); }
-      if (b.type === 'pasture') { const A = ANIMALS[b.animal], wait = Object.keys(ANIMALS).filter(k => (G.herd[k] || 0) > 0); h += `<div class="row"><span>牲畜</span><select data-a="animal" ${b.count > 0 ? 'disabled' : ''}>${Object.keys(ANIMALS).map(k => `<option value="${k}" ${b.animal === k ? 'selected' : ''}>${ANIMALS[k].n}（待安置 ${G.herd[k] || 0}）</option>`).join('')}</select></div><div class="row"><span>數量</span><span>${b.count} / ${Math.floor(b.w * b.d / A.tiles)}</span></div><div class="row"><span>照料</span>${bar(b.care || 0)}</div><div class="row"><span>滿額時</span><span class="step"><button data-a="split" class="${b.split !== false ? 'on' : ''}">分群到其他牧場</button><button data-a="slaughter" class="${b.slaughter !== false ? 'on' : ''}">屠宰</button></span></div><div class="sub">牲畜會自行繁殖。數量接近上限時，牧民會先把一部分趕到其他未滿的同種牧場（或尚未有牲畜的空牧場會主動來分群），都滿了才屠宰取肉。</div>` + (b.count > 0 ? '' : (G.herd[b.animal] || 0) > 0 ? `<div class="sub">牧民到場後，會把 ${G.herd[b.animal]} 隻${A.n}趕進牧場。</div>` : wait.length ? `<div class="sub">目前沒有待安置的${A.n}。請在上方改選：${wait.map(k => ANIMALS[k].n + ' ' + G.herd[k] + ' 隻').join('、')}。</div>` : `<div class="sub">沒有任何待安置的牲畜。可從其他牧場分群（數量達 8 隻以上時），或在貿易站向商船購買。</div>`) + (b.count > 0 && wait.length ? `<div class="sub">另有待安置：${wait.map(k => ANIMALS[k].n + ' ' + G.herd[k] + ' 隻').join('、')}，需另建牧場。</div>` : ''); }
+      if (b.type === 'pasture') { const A = ANIMALS[b.animal], wait = Object.keys(ANIMALS).filter(k => (G.herd[k] || 0) > 0); h += `<div class="row"><span>牲畜</span><select data-a="animal" ${b.count > 0 ? 'disabled' : ''}>${Object.keys(ANIMALS).map(k => `<option value="${k}" ${b.animal === k ? 'selected' : ''}>${ANIMALS[k].n}（待安置 ${G.herd[k] || 0}）</option>`).join('')}</select></div><div class="row"><span>數量</span><span>${b.count} / ${Math.floor(b.w * b.d / A.tiles)}</span></div><div class="row"><span>照料</span>${bar(b.care || 0)}</div><div class="row"><span>分群</span><span class="step"><button data-a="splitNow" class="${b.splitNow ? 'on' : ''}" ${b.count >= 4 ? '' : 'disabled'}>${b.splitNow ? '等待牧民分群…' : '立即分群到空牧場'}</button></span></div><div class="row"><span>滿額時</span><span class="step"><button data-a="split" class="${b.split !== false ? 'on' : ''}">分群到其他牧場</button><button data-a="slaughter" class="${b.slaughter !== false ? 'on' : ''}">屠宰</button></span></div><div class="sub">牲畜會自行繁殖，數量越多生得越快。有空牧場時，牧民達到六成就會分一群過去，讓兩座牧場一起繁殖；也可以按「立即分群」。數量接近上限、又沒有地方可分時才屠宰取肉。</div>` + (b.count > 0 ? '' : (G.herd[b.animal] || 0) > 0 ? `<div class="sub">牧民到場後，會把 ${G.herd[b.animal]} 隻${A.n}趕進牧場。</div>` : wait.length ? `<div class="sub">目前沒有待安置的${A.n}。請在上方改選：${wait.map(k => ANIMALS[k].n + ' ' + G.herd[k] + ' 隻').join('、')}。</div>` : `<div class="sub">沒有任何待安置的牲畜。可從其他牧場分群（數量達 8 隻以上時），或在貿易站向商船購買。</div>`) + (b.count > 0 && wait.length ? `<div class="sub">另有待安置：${wait.map(k => ANIMALS[k].n + ' ' + G.herd[k] + ' 隻').join('、')}，需另建牧場。</div>` : ''); }
       if (b.type === 'forester') h += `<div class="row"><span>作業</span><span class="step"><button data-a="cut" class="${b.cut ? 'on' : ''}">砍伐</button><button data-a="plant" class="${b.plant ? 'on' : ''}">種植</button></span></div><div class="row"><span>範圍內成樹密度</span>${bar(forestDensity(b, D.radius, 6))}</div>`;
       if (b.type === 'gatherer') h += `<div class="row"><span>森林豐度</span>${bar(forestDensity(b, D.radius, 6))}</div>`;
       if (b.type === 'herbalist') h += `<div class="row"><span>老林豐度</span>${bar(forestDensity(b, D.radius, 12))}</div>`;
@@ -2854,6 +2859,7 @@ function panelClick(e) {
   if (a === 'follow') { UI.follow = !UI.follow; drawPanel(true); return; } if (a === 'm') { openModal(v); return; }
   const b = s && s.k === 'b' && BI.get(s.id); if (!b) return; const D = BUILD[b.type];
   if (a === 'wk') b.workers = clamp(b.workers + +v, 0, D.max); else if (a === 'on') b.on = !b.on; else if (a === 'pri') b.pri = +v; else if (a === 'upg') startUpgrade(b);
+  else if (a === 'splitNow') { b.splitNow = !b.splitNow; if (b.splitNow) b.split = true; }
   else if (a === 'split') b.split = b.split === false; else if (a === 'slaughter') b.slaughter = b.slaughter === false;
   else if (a === 'cut') b.cut = !b.cut; else if (a === 'plant') b.plant = !b.plant; else if (a === 'lim') b.limit = clamp(b.limit + +v, 0, 2000);
   else if (a === 'demo') { const err = demolish(b); if (err) { $('tip').innerHTML = `<span class="bad">${err}</span>`; $('tip').hidden = false; } }
