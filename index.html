@@ -101,6 +101,7 @@ canvas.chart { width: 100%; height: 150px; display: block; background: #1b1814; 
 .rng input[type=range] { width: 220px; max-width: 100%; accent-color: var(--ochre); min-width: 0; touch-action: pan-x; }
 .rng b { min-width: 3.2em; text-align: right; }
 @media (max-width: 640px) { .rngrow { flex-direction: column; align-items: stretch; gap: 4px; } .rngrow .rng { justify-content: stretch; } .rng input[type=range] { width: auto; flex: 1 1 auto; height: 28px; } }
+.seal small.sz { color: var(--ochre); opacity: .85; }
 kbd { border: 1px solid var(--edge2); border-radius: 2px; padding: 0 5px; font-family: inherit; background: var(--ink); }
 @media (max-width: 640px) { body { font-size: 12.5px; } #panel { top: auto; bottom: calc(var(--barH, 96px) + 8px); max-height: 46%; right: max(16px, env(safe-area-inset-right, 0px)); } #warn { max-width: 62vw; } #feed { display: none; } .seal { min-width: 46px; } #setup { align-items: center; } #setup h1 { font-size: 26px; } }
 @media (prefers-reduced-motion: reduce) { .f { transition: none; } }
@@ -127,7 +128,7 @@ kbd { border: 1px solid var(--edge2); border-radius: 2px; padding: 0 5px; font-f
 // ═══ data.js ═══
 'use strict';
 // ───────────────────────── 常數與資料表 ─────────────────────────
-const VERSION = '0.06';      // 遊戲版本（每次發佈加 0.01）
+const VERSION = '0.07';      // 遊戲版本（每次發佈加 0.01）
 const YEAR = 600;          // 一年 = 600 模擬秒（1x 速度下 10 分鐘，10x 下 1 分鐘）
 const AGE_RATE = 3;        // 居民每曆年老化 3 歲
 const CARRY = 100;         // 居民負重上限
@@ -982,8 +983,9 @@ function assignJobs() {
   }
   while (nb > G.builders) { const c = builders.pop(); c.job = 'laborer'; free.push(c); nb--; }
   while (nb < G.builders && free.length) { const c = free.pop(); c.job = 'builder'; c.work = 0; nb++; }
-  for (const b of G.bld) {
-    const D = BUILD[b.type]; if (!D.max) continue;
+  const order = G.bld.filter(b => BUILD[b.type].max).sort((x, y) => (y.staffPri ? 1 : 0) - (x.staffPri ? 1 : 0));
+  for (const b of order) {
+    const D = BUILD[b.type];
     b.wk = b.wk.filter(id => { const c = CI.get(id); return c && c.work === b.id && isWorker(c); });
     const want = (b.st === 'ok' && b.on) ? b.workers : 0;
     while (b.wk.length > want) { const c = CI.get(b.wk.pop()); c.job = 'laborer'; c.work = 0; free.push(c); }
@@ -993,6 +995,12 @@ function assignJobs() {
       const c = free.splice(bi, 1)[0]; c.job = D.prof; c.work = b.id; b.wk.push(c.id);
     }
   }
+  // 優先補人：仍缺工時，從最近的非優先工作調人（每秒最多調 3 人，避免來回搶人）
+  let moves = 0;
+  for (const b of order) { if (!b.staffPri || b.st !== 'ok' || !b.on) continue; const D = BUILD[b.type], needEdu = D.prof === 'teacher' || D.prof === 'physician';
+    while (b.wk.length < b.workers && moves < 3) { let best = null, bc = null, bd = 1e9;
+      for (const o of order) { if (o === b || o.staffPri || !o.wk.length) continue; for (const id of o.wk) { const c = CI.get(id); if (!c || (needEdu && !c.edu)) continue; const d = dist(c.x, c.y, b.ex, b.ey); if (d < bd) { bd = d; best = o; bc = c; } } }
+      if (!best) break; best.wk = best.wk.filter(i => i !== bc.id); clearPlan(bc); bc.job = D.prof; bc.work = b.id; b.wk.push(bc.id); moves++; } }
   G.nLab = free.length; G.nBld = nb;
 }
 function full(c, r) { c.st = '倉庫已滿，無法存放' + RES[r].n; G.fullT = G.t; G.fullCls = RES[r].cls; c.idle = 3; return false; }
@@ -1087,7 +1095,9 @@ const JOBS = {
     return false;
   },
   pasture(c, b, reg) {
+    if (b.count <= 0 && !((G.herd[b.animal] || 0) > 0) && !b.animalSet) { const k = Object.keys(ANIMALS).find(a => (G.herd[a] || 0) > 0); if (k) b.animal = k; }
     const A = ANIMALS[b.animal]; b.cap = Math.floor(b.w * b.d / A.tiles);
+    if (b.count > 0 && (G.herd[b.animal] || 0) > 0 && b.count < b.cap) { const n = Math.min(G.herd[b.animal], b.cap - b.count); G.herd[b.animal] -= n; b.count += n; b.gd = true; logEv(`牧民將新來的 ${n} 隻${A.n}趕入牧場。`, 'info', b.ex, b.ey); }
     if (b.count <= 0) {
       if ((G.herd[b.animal] || 0) > 0) { const n = Math.min(G.herd[b.animal], b.cap); G.herd[b.animal] -= n; b.count = n; logEv(`牧民將 ${n} 隻${A.n}趕入牧場。`, 'info', b.ex, b.ey); }
       else { // 從其他牧場分一群過來；尚未指定牲畜的空牧場會接手對方的種類
@@ -2308,14 +2318,16 @@ if (typeof module !== 'undefined') module.exports = Sfx;
 const R = { ready: false, uSnow: { value: 0 }, uSnowB: { value: 0.85 }, uTime: { value: 0 }, bm: new Map(), herd: {}, sel: null, shadows: true, tAcc: 0 };
 const lin = (h) => new THREE.Color(h).convertSRGBToLinear();
 const TMPC = new THREE.Color(), DUM = new THREE.Object3D(), ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
-function snowify(mat, wind) {
+function snowify(mat, wind, mask) {
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uSnow = R.uSnow; sh.uniforms.uSnowB = R.uSnowB; sh.uniforms.uTime = R.uTime; sh.uniforms.uSnowV = R.uSnow;
     sh.vertexShader = 'varying float vSnowF;\nuniform float uTime;\nuniform float uSnowV;\n' + sh.vertexShader.replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\n vSnowF = objectNormal.y;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + (wind ? '#ifdef USE_INSTANCING\n float ph = instanceMatrix[3].x*0.21+instanceMatrix[3].z*0.16; float hs = length(instanceMatrix[1].xyz); float gust = 0.6 + 0.4*sin(uTime*0.23+instanceMatrix[3].x*0.05); float amp = 0.022*hs*gust*(1.0-0.7*uSnowV); transformed.x += sin(uTime*0.9-ph)*amp*max(transformed.y,0.0); transformed.z += sin(uTime*0.7-ph*0.8)*amp*0.6*max(transformed.y,0.0);\n#endif\n' : ''));
+    if (mask) { sh.vertexShader = 'attribute float aSnowM;\nvarying float vSnowM;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vSnowM = aSnowM;'); }
     sh.fragmentShader = 'varying float vSnowF;\nuniform float uSnow;\nuniform float uSnowB;\n' + sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.43,0.46,0.52)*uSnowB, clamp(uSnow*1.1,0.0,0.82) * smoothstep(0.3,0.78,vSnowF));');
+    if (mask) sh.fragmentShader = 'varying float vSnowM;\n' + sh.fragmentShader.replace('smoothstep(0.3,0.78,vSnowF)', 'smoothstep(0.3,0.78,vSnowF) * vSnowM');
   };
-  mat.customProgramCacheKey = () => (wind ? 'snowW' : 'snow'); return mat;
+  mat.customProgramCacheKey = () => (mask ? 'snowM' : wind ? 'snowW' : 'snow'); return mat;
 }
 function initRender(canvas) {
   const r = R.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -2325,19 +2337,20 @@ function initRender(canvas) {
   R.hemi = new THREE.HemisphereLight(0xcfd8dc, 0x6b6250, 0.62); R.scene.add(R.hemi);
   const sun = R.sun = new THREE.DirectionalLight(0xfff1d6, 0.95); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.05; R.scene.add(sun); R.scene.add(sun.target);
   R.matB = snowify(new THREE.MeshLambertMaterial({ vertexColors: true }));
-  R.matT = snowify(new THREE.MeshLambertMaterial({ vertexColors: true }));
+  R.matT = snowify(new THREE.MeshLambertMaterial({ vertexColors: true }), false, true);
   R.matLeaf = snowify(new THREE.MeshLambertMaterial({}), true); R.matTrunk = new THREE.MeshLambertMaterial({ color: lin(0x5a4634) });
   R.matPlain = new THREE.MeshLambertMaterial({}); R.matCrop = snowify(new THREE.MeshLambertMaterial({}), true);
   R.matGhostOk = new THREE.MeshBasicMaterial({ color: 0x8fbf6a, transparent: true, opacity: 0.45, depthWrite: false }); R.matGhostBad = new THREE.MeshBasicMaterial({ color: 0xc0503c, transparent: true, opacity: 0.45, depthWrite: false });
   R.world = new THREE.Group(); R.scene.add(R.world); R.dyn = new THREE.Group(); R.scene.add(R.dyn);
   // 預覽格
   const q = new THREE.PlaneGeometry(0.94, 0.94); q.rotateX(-Math.PI / 2);
-  R.ghostTiles = new THREE.InstancedMesh(q, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.5, depthWrite: false, depthTest: false }), 700); R.ghostTiles.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(700 * 3).fill(1), 3); R.ghostTiles.count = 0; R.ghostTiles.frustumCulled = false; R.ghostTiles.renderOrder = 5; R.scene.add(R.ghostTiles);
+  R.ghostTiles = new THREE.InstancedMesh(q, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.68, depthWrite: false, depthTest: false }), 700); R.ghostTiles.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(700 * 3).fill(1), 3); R.ghostTiles.count = 0; R.ghostTiles.frustumCulled = false; R.ghostTiles.renderOrder = 5; R.scene.add(R.ghostTiles);
   R.ghostModel = new THREE.Mesh(new THREE.BufferGeometry(), R.matGhostOk); R.ghostModel.visible = false; R.scene.add(R.ghostModel); R.ghostCache = {};
   const ring = new THREE.RingGeometry(0.42, 0.52, 24); ring.rotateX(-Math.PI / 2); R.selRing = new THREE.Mesh(ring, new THREE.MeshBasicMaterial({ color: 0xf2e3b0, transparent: true, opacity: 0.9, depthTest: false })); R.selRing.visible = false; R.selRing.renderOrder = 6; R.scene.add(R.selRing);
   R.radius = new THREE.LineLoop(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(97 * 3), 3)), new THREE.LineBasicMaterial({ color: 0xf2e3b0, transparent: true, opacity: 0.75, depthTest: false })); R.radius.visible = false; R.radius.frustumCulled = false; R.radius.renderOrder = 6; R.scene.add(R.radius);
   R.selBox = new THREE.LineLoop(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(5 * 3), 3)), new THREE.LineBasicMaterial({ color: 0xf2e3b0, depthTest: false })); R.selBox.visible = false; R.selBox.frustumCulled = false; R.selBox.renderOrder = 6; R.scene.add(R.selBox);
   const sg = new THREE.RingGeometry(0.55, 0.9, 20); sg.rotateX(-Math.PI / 2); R.spots = new THREE.InstancedMesh(sg, new THREE.MeshBasicMaterial({ color: 0x9fd07a, transparent: true, opacity: 0.85, depthTest: false }), 500); R.spots.count = 0; R.spots.frustumCulled = false; R.spots.renderOrder = 6; R.scene.add(R.spots);
+  const GR = 10, gl = new Float32Array((2 * GR + 1) * 2 * GR * 2 * 2 * 3); R.grid = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(gl, 3)), new THREE.LineBasicMaterial({ color: 0x15120f, transparent: true, opacity: 0.7 })); R.grid.visible = false; R.grid.frustumCulled = false; R.grid.renderOrder = 4; R.gridR = GR; R.scene.add(R.grid);
   initParticles(); R.ready = true; resizeRender();
 }
 const DISP = { bright: 1, snow: 0.85 }; // 顯示設定（只存在這個瀏覽器）
@@ -2357,7 +2370,7 @@ function buildWorldMeshes() {
     for (let k = 0; k < 4; k++) { const vx = x + (k & 1), vy = y + (k >> 1), p = o + k * 3; pos[p] = vx; pos[p + 1] = w.h[vy * n1 + vx]; pos[p + 2] = vy;
       const nx = hN(vx - 1, vy) - hN(vx + 1, vy), nz = hN(vx, vy - 1) - hN(vx, vy + 1), l = Math.hypot(nx, 2, nz); nor[p] = nx / l; nor[p + 1] = 2 / l; nor[p + 2] = nz / l; }
     const v = t * 4, i = t * 6; idx[i] = v; idx[i + 1] = v + 2; idx[i + 2] = v + 1; idx[i + 3] = v + 1; idx[i + 4] = v + 2; idx[i + 5] = v + 3; }
-  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setIndex(new THREE.BufferAttribute(idx, 1));
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setAttribute('aSnowM', new THREE.BufferAttribute(new Float32Array(n * n * 4).fill(1), 1)); g.setIndex(new THREE.BufferAttribute(idx, 1));
   R.terrain = new THREE.Mesh(g, R.matT); R.terrain.receiveShadow = true; R.terrain.frustumCulled = false; R.world.add(R.terrain);
   // 地圖外圍裙邊與水面
   const wg = new THREE.PlaneGeometry(n + 400, n + 400); wg.rotateX(-Math.PI / 2);
@@ -2403,12 +2416,13 @@ const GRASS_KEYS = [[0, 0x7d8358], [0.12, 0x74904f], [0.3, 0x5e8744], [0.5, 0x66
 function keyCol(keys, f, out) { for (let i = 1; i < keys.length; i++) if (f <= keys[i][0]) { const a = keys[i - 1], b = keys[i], t = (f - a[0]) / (b[0] - a[0]); out.setHex(a[1]); TMPC.setHex(b[1]); out.lerp(TMPC, t); return out; } return out.setHex(keys[0][1]); }
 const C_ = {};
 function paintTerrain() {
-  const w = W, n = w.n, col = R.terrain.geometry.attributes.color.array, f = yfrac();
+  const w = W, n = w.n, col = R.terrain.geometry.attributes.color.array, sm = R.terrain.geometry.attributes.aSnowM.array, f = yfrac();
   const grass = keyCol(GRASS_KEYS, f, C_.g || (C_.g = new THREE.Color())).convertSRGBToLinear(), gr = grass.r, gg = grass.g, gb = grass.b;
   const P = C_.p || (C_.p = { rock: lin(0x85837c), rock2: lin(0x6f6d68), sand: lin(0x9a8f6c), bed: lin(0x5a5f50), dirt: lin(0x7c654a), dirtJ: lin(0x9a8a6a), stone: lin(0x8d8b85), stoneJ: lin(0xa8a59a), soil: lin(0x5a4332), site: lin(0x857256), pile: lin(0x80704f), pit: lin(0x5e5c58), forest: lin(0x4f5a3a), grave: lin(0x5c6a48), past: lin(0x8a8f55), bridge: lin(0x5a5f50) });
   const seed = G.P.seed;
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
     const i = y * n + x, o = i * 12, tt = w.tt[i], rd = w.road[i], job = G.roadJobs[i], occ = w.occ[i]; let flat = null;
+    const smv = rd === 2 ? 0.1 : rd === 1 ? 0.22 : rd === 3 ? 0.1 : job ? 0.5 : 1; sm[i * 4] = sm[i * 4 + 1] = sm[i * 4 + 2] = sm[i * 4 + 3] = smv;
     if (rd === 1) flat = P.dirt; else if (rd === 2) flat = P.stone; else if (rd === 3) flat = P.bridge; else if (job) flat = job.t === 2 ? P.stoneJ : P.dirtJ; else if (tt === 3) flat = P.pit;
     else if (occ) { const b = BI.get(occ); if (b) { const ty = b.type; flat = ty === 'field' ? P.soil : ty === 'stockpile' ? P.pile : ty === 'quarry' ? P.pit : ty === 'cemetery' ? P.grave : ty === 'pasture' ? null : ty === 'orchard' ? null : P.site; if (ty === 'pasture') flat = 1; } }
     for (let k = 0; k < 4; k++) { const vx = x + (k & 1), vy = y + (k >> 1), p = o + k * 3; let r, g, b;
@@ -2421,7 +2435,7 @@ function paintTerrain() {
         if (flat === 1) { r = lerp(r, P.past.r, 0.4); g = lerp(g, P.past.g, 0.4); b = lerp(b, P.past.b, 0.4); } }
       col[p] = r; col[p + 1] = g; col[p + 2] = b; }
   }
-  R.terrain.geometry.attributes.color.needsUpdate = true; w.tileDirty = false;
+  R.terrain.geometry.attributes.color.needsUpdate = true; R.terrain.geometry.attributes.aSnowM.needsUpdate = true; w.tileDirty = false;
   // 橋面與標記
   let bc = 0, mc = 0;
   let rc = 0; R.brList = []; const isB = (k) => k >= 0 && k < n * n && w.road[k] === 3, isWet = (k) => k >= 0 && k < n * n && w.tt[k] === 1 && w.road[k] !== 3;
@@ -2613,7 +2627,7 @@ function pickGround(mx, my) { // 螢幕座標 → 地面點（沿射線步進高
 }
 function pickCitizen(mx, my) { let best = null, bd = 22 + 260 / R.c.dist; for (const c of G.cits) { if (c.hid || c.age < 2) continue; V1.set(c.x, walkH(c.x, c.y) + 0.3, c.y).project(R.cam); if (V1.z > 1) continue; const sx = (V1.x + 1) / 2 * R.w, sy = (1 - V1.y) / 2 * R.h, d = Math.hypot(sx - mx, sy - my); if (d < bd) { bd = d; best = c; } } return best; }
 function setGhost(tiles, okFn, model) { // tiles: [[x,y,ok]], model: {type, x, y, w, d, rot, ok}
-  let i = 0; if (tiles) for (const t of tiles) { if (i >= 700) break; DUM.position.set(t[0] + 0.5, Math.max(tileH(t[0], t[1]), WATER_Y) + 0.08, t[1] + 0.5); DUM.rotation.set(0, 0, 0); DUM.scale.set(1, 1, 1); DUM.updateMatrix(); R.ghostTiles.setMatrixAt(i, DUM.matrix); R.ghostTiles.setColorAt(i, TMPC.setHex(t[2] ? 0x8fbf6a : 0xc0503c)); i++; }
+  let i = 0; if (tiles) for (const t of tiles) { if (i >= 700) break; DUM.position.set(t[0] + 0.5, Math.max(tileH(t[0], t[1]), WATER_Y) + 0.08, t[1] + 0.5); DUM.rotation.set(0, 0, 0); DUM.scale.set(1, 1, 1); DUM.updateMatrix(); R.ghostTiles.setMatrixAt(i, DUM.matrix); R.ghostTiles.setColorAt(i, TMPC.setHex(t[2] ? 0x4fa83a : 0xd23c24)); i++; }
   R.ghostTiles.count = i; R.ghostTiles.instanceMatrix.needsUpdate = true; if (R.ghostTiles.instanceColor) R.ghostTiles.instanceColor.needsUpdate = true;
   if (model) { const D = BUILD[model.type]; let g = R.ghostCache[model.type]; if (!g) g = R.ghostCache[model.type] = Models.build(model.type, D.w, D.d, 1).geo; R.ghostModel.geometry = g; R.ghostModel.material = model.ok ? R.matGhostOk : R.matGhostBad; R.ghostModel.visible = true; const b = { x: model.x, y: model.y, w: model.w, d: model.d }; R.ghostModel.position.set(model.x + model.w / 2, baseY(b) + 0.04, model.y + model.d / 2); R.ghostModel.rotation.y = model.rot * Math.PI / 2; } else R.ghostModel.visible = false;
 }
@@ -2622,6 +2636,12 @@ function showSpots(type) {
   const list = validSpots(type); let i = 0;
   for (const [x, z] of list) { if (i >= 500) break; DUM.position.set(x, Math.max(heightAt(x, z), WATER_Y) + 0.12, z); DUM.rotation.set(0, 0, 0); DUM.scale.set(1, 1, 1); DUM.updateMatrix(); R.spots.setMatrixAt(i++, DUM.matrix); }
   R.spots.count = i; R.spots.instanceMatrix.needsUpdate = true; UI.spotN = i;
+}
+function setGrid(tx, ty) { // 放置建築時在游標附近顯示格線
+  if (tx == null) { R.grid.visible = false; R.gridKey = null; return; } const key = tx + ',' + ty; if (R.gridKey === key && R.grid.visible) return; R.gridKey = key;
+  const p = R.grid.geometry.attributes.position.array, G2 = R.gridR, n = W.n; let k = 0; const hy = (x, z) => Math.max(heightAt(clamp(x, 0, n - 0.01), clamp(z, 0, n - 0.01)), WATER_Y) + 0.05;
+  for (let j = -G2; j <= G2; j++) for (let i = -G2; i < G2; i++) { const x0 = tx + i, x1 = x0 + 1, z = ty + j; p[k++] = x0; p[k++] = hy(x0, z); p[k++] = z; p[k++] = x1; p[k++] = hy(x1, z); p[k++] = z; const X = tx + j, z0 = ty + i, z1 = z0 + 1; p[k++] = X; p[k++] = hy(X, z0); p[k++] = z0; p[k++] = X; p[k++] = hy(X, z1); p[k++] = z1; }
+  R.grid.geometry.attributes.position.needsUpdate = true; R.grid.visible = true;
 }
 function setRadius(cx, cz, r) { if (!r) { R.radius.visible = false; return; } const p = R.radius.geometry.attributes.position.array, n = W.n; for (let i = 0; i < 97; i++) { const a = i / 96 * 6.2832, x = clamp(cx + Math.cos(a) * r, 0, n - 0.01), z = clamp(cz + Math.sin(a) * r, 0, n - 0.01); p[i * 3] = x; p[i * 3 + 1] = Math.max(heightAt(x, z), WATER_Y) + 0.15; p[i * 3 + 2] = z; } R.radius.geometry.attributes.position.needsUpdate = true; R.radius.visible = true; }
 function updateSelection() {
@@ -2671,7 +2691,10 @@ function initUI() {
   $('ctl').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; Sfx.play('click'); if (b.dataset.sp != null) setSpeed(+b.dataset.sp); else openModal(b.dataset.m); };
   $('warn').onclick = (e) => { const w = e.target.closest('.w'); if (!w) return; const o = G.warn[+w.dataset.i]; if (!o) return; if (o.nomad) openModal('nomad'); else if (o.trade) openModal('trade'); else jumpTo(o.x, o.y); };
   $('feed').onclick = (e) => { const f = e.target.closest('.f'); if (f && f.dataset.x) jumpTo(+f.dataset.x, +f.dataset.y); };
-  $('panel').onclick = panelClick; $('panel').onchange = panelChange;
+  $('panel').onclick = panelClick; $('panel').onchange = (e) => { UI.selOpen = 0; panelChange(e); };
+  $('panel').addEventListener('pointerdown', (e) => { UI.panelT = performance.now(); if (e.target.tagName === 'SELECT' || e.target.closest('select')) UI.selOpen = performance.now(); });
+  $('panel').addEventListener('focusin', (e) => { if (e.target.tagName === 'SELECT') UI.selOpen = performance.now(); });
+  $('panel').addEventListener('focusout', (e) => { if (e.target.tagName === 'SELECT') UI.selOpen = 0; });
   $('win').onclick = modalClick; $('win').onchange = modalChange; $('win').oninput = (e) => { if (e.target.id === 'setBright' || e.target.id === 'setSnow') { const v = +e.target.value / 100; if (e.target.id === 'setBright') DISP.bright = v; else DISP.snow = v; $(e.target.id + 'V').textContent = Math.round(v * 100) + '%'; applyDisplay(true); return; } if (UI.modal === 'trade') tradeSum(); else if (UI.modal === 'auto' && e.target.classList.contains('numin') && e.target.value !== '') modalChange(e); };
   $('modal').onpointerdown = (e) => { if (e.target === $('modal')) closeModal(); };
   for (const ev of ['pointerdown', 'touchstart']) $('win').addEventListener(ev, () => { UI.winT = performance.now(); }, { passive: true });
@@ -2686,9 +2709,9 @@ function layoutVars() { const a = $('app').style; a.setProperty('--topH', $('top
 function drawSub() {
   for (const b of $('cats').children) b.classList.toggle('on', b.dataset.cat === UI.cat);
   const s = $('sub'); if (!UI.cat) { s.hidden = true; layoutVars(); return; } let h = '';
-  const btn = (id, ic, n, sm) => `<button class="seal ${UI.tool && UI.tool.id === id ? 'on' : ''}" data-t="${id}"><em>${ic}</em><span>${n}</span>${sm ? `<small>${sm}</small>` : ''}</button>`;
+  const btn = (id, ic, n, sm, sz) => `<button class="seal ${UI.tool && UI.tool.id === id ? 'on' : ''}" data-t="${id}"><em>${ic}</em><span>${n}</span>${sm ? `<small>${sm}</small>` : ''}${sz ? `<small class="sz">${sz}</small>` : ''}</button>`;
   if (UI.cat === 'tools') h = btn('mark:tree', '伐', '採集樹木') + btn('mark:rock', '石', '採集石塊') + btn('mark:all', '採', '全部採集') + btn('unmark', '止', '取消標記') + btn('demolish', '拆', '拆除建築') + btn('unroad', '剷', '移除道路') + `<span class="subsep"></span>` + [['none', '均', '不限'], ['rock', '岩', '優先石頭'], ['tree', '木', '優先木頭']].map(([k, ic, nm]) => `<button class="seal ${(G.markPri || 'none') === k ? 'on' : ''}" data-t="pri:${k}" title="勞工採集標記物時的優先順序"><em>${ic}</em><span>${nm}</span><small>採集順序</small></button>`).join('');
-  else { for (const k in BUILD) { const D = BUILD[k]; if (D.cat !== UI.cat) continue; const c = D.cost || {}; h += btn('b:' + k, D.ic, D.n, [c.log ? '木' + c.log : '', c.stone ? '石' + c.stone : '', c.iron ? '鐵' + c.iron : ''].filter(Boolean).join(' ') || (D.area ? '拖曳' : '')); }
+  else { for (const k in BUILD) { const D = BUILD[k]; if (D.cat !== UI.cat) continue; const c = D.cost || {}; h += btn('b:' + k, D.ic, D.n, [c.log ? '木' + c.log : '', c.stone ? '石' + c.stone : '', c.iron ? '鐵' + c.iron : ''].filter(Boolean).join(' ') || (D.area ? '拖曳' : ''), D.area ? `最小 ${D.min}×${D.min}` : D.tool ? '' : `${D.w}×${D.d} 格`); }
     if (UI.cat === 'admin') h += btn('m:people', '民', '居民狀態') + btn('m:jobs', '職', '職業管理') + btn('m:stats', '統', '城鎮統計') + btn('m:log', '紀', '歷史紀事'); }
   s.innerHTML = h; s.hidden = false; layoutVars();
 }
@@ -2700,7 +2723,7 @@ function setTool(id) {
 }
 function tip(extra, bad) {
   const t = UI.tool; if (!t) { $('tip').hidden = true; return; } let s = '';
-  if (t.k === 'b') { const D = BUILD[t.v]; s = `<b>${D.n}</b>　${D.tool ? '' : costStr(D.cost || {}) + '　'}${D.desc}${D.area || D.tool ? '' : '　<kbd>R</kbd> 旋轉'}`; }
+  if (t.k === 'b') { const D = BUILD[t.v]; s = `<b>${D.n}</b>${D.area ? `（拖曳範圍，最小 ${D.min}×${D.min}、單邊最多 ${D.maxSide}）` : D.tool ? '' : `（佔地 ${D.w}×${D.d}）`}　${D.tool ? '' : costStr(D.cost || {}) + '　'}${D.desc}${D.area || D.tool ? '' : '　<kbd>R</kbd> 旋轉'}`; }
   else if (t.k === 'mark') s = '<b>標記採集</b>　拖曳框選範圍，勞工會前往砍伐樹木或敲取石塊並運回堆料場。';
   else if (t.k === 'unmark') s = '<b>取消標記</b>　拖曳框選要取消採集的範圍。'; else if (t.k === 'demolish') s = '<b>拆除</b>　點選建築。施工中的建築會直接取消並退回建材。'; else if (t.k === 'unroad') s = '<b>移除道路</b>　拖曳框選範圍。';
   if (extra) s += `<br><span class="${bad ? 'bad' : ''}">${extra}</span>`; s += '　<kbd>Esc</kbd> 取消';
@@ -2762,7 +2785,7 @@ function validSpots(type) { // 全地圖可蓋位置（相近的合併成一個�
   return out;
 }
 function updateGhost() {
-  const t = UI.tool; UI.place = null; if (!t) return; const g = UI.hover, n = W.n;
+  const t = UI.tool; UI.place = null; if (!t) { setGrid(null); return; } const g = UI.hover, n = W.n; if (g && (t.k === 'b' || t.k === 'mark' || t.k === 'unmark' || t.k === 'unroad')) setGrid(g.tx, g.ty); else setGrid(null);
   if (UI.drag) { const d = UI.drag, tiles = [];
     if (t.k === 'b' && BUILD[t.v].tool) { let st = 0, br = 0; for (const k of roadTiles(d)) { const x = k % n, y = (k / n) | 0, ok = W.tt[k] !== 2 && !W.blk[k]; tiles.push([x, y, ok]); if (ok) { if (W.tt[k] === 1) br++; else if (t.v === 'sroad') st++; } } tip(`${tiles.length} 格` + (st ? `，石材 ${st}` : '') + (br ? `，橋樑 ${br} 格（原木 ${br * 3}）` : '')); }
     else if (t.k === 'b') { const D = BUILD[t.v], [x, y, w, h] = areaRect(d, D), err = checkPlace(t.v, x, y, w, h, 0); for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) { if (tiles.length >= 700) break; const k = j * n + i; tiles.push([i, j, !err && i > 0 && j > 0 && i < n - 1 && j < n - 1 && W.tt[k] === 0 && !W.occ[k]]); } tip(`${w}×${h}　${err || costStr(costOf(t.v, w, h))}` + (!err && t.v === 'field' ? `　建議農民 ${clamp(Math.ceil(w * h / 42), 1, 4)} 人` : ''), !!err); }
@@ -2805,7 +2828,7 @@ function fruitSel(b) {
 }
 function drawPanel(force) {
   const s = UI.sel, P = $('panel'); if (!s) { P.hidden = true; return; }
-  if (!force && P.contains(document.activeElement) && /SELECT|INPUT/.test(document.activeElement.tagName)) return;
+  if (!force && (P.contains(document.activeElement) && /SELECT|INPUT/.test(document.activeElement.tagName) || (UI.selOpen && performance.now() - UI.selOpen < 15000) || performance.now() - (UI.panelT || 0) < 700)) return;
   let h = '<button class="x" data-a="close" aria-label="關閉">×</button>';
   if (s.k === 'c') { const c = CI.get(s.id); if (!c) { const d = G.dead && G.dead[s.id]; if (!d) { selectNone(); return; } UI.follow = false; P.innerHTML = h + `<h2>${esc(d.n)}</h2><div class="sub">已於第 ${d.y} 年${SEASONS[d.s]}過世，享年 ${d.a} 歲</div><div class="row"><span>死因</span><b>${CAUSE[d.cause] || d.cause}</b></div>`; P.hidden = false; return; } const home = BI.get(c.home), wk = BI.get(c.work), sp = CI.get(c.sp), kids = G.cits.filter(k => k.mo === c.id || k.fa === c.id);
     h += `<h2>${esc(fullName(c))}</h2><div class="sub">${c.sex === 'M' ? '男' : '女'}・${Math.floor(c.age)} 歲・${ageStage(c)}${c.edu ? '・受過教育' : ''}</div>`;
@@ -2828,7 +2851,7 @@ function drawPanel(force) {
     if (b.st === 'demo') h += `<div class="row"><span>狀態</span><b>拆除中　${Math.round(b.demo.done / b.demo.work * 100)}%</b></div>`;
     if (b.fire > 0) h += `<div class="row"><span>火災</span><b style="color:var(--madder)">燃燒中 ${Math.round(b.fire * 100)}%</b></div>`;
     if (b.st === 'ok') {
-      if (D.max) h += `<div class="row"><span>工人（${PROFS[D.prof]}）</span><span class="step"><button data-a="wk" data-v="-1">−</button><b class="num">${b.wk.length} / ${b.workers}</b><button data-a="wk" data-v="1">＋</button><small>上限 ${D.max}</small></span></div><div class="row"><span>運作</span><button data-a="on" class="${b.on ? 'on' : ''}">${b.on ? '啟用中' : '已停用'}</button></div>`;
+      if (D.max) h += `<div class="row"><span>工人（${PROFS[D.prof]}）</span><span class="step"><button data-a="wk" data-v="-1">−</button><b class="num">${b.wk.length} / ${b.workers}</b><button data-a="wk" data-v="1">＋</button><small>上限 ${D.max}</small></span></div><div class="row"><span>運作</span><button data-a="on" class="${b.on ? 'on' : ''}">${b.on ? '啟用中' : '已停用'}</button></div><div class="row"><span>優先補人</span><button data-a="staffPri" class="${b.staffPri ? 'on' : ''}">${b.staffPri ? '優先' : '一般'}</button></div>${b.staffPri ? '<div class="sub">缺工時，會從其他「一般」的工作場所調人過來。</div>' : ''}`;
       if (D.home) { h += `<div class="row"><span>居民</span><span>${b.occ.length} / ${D.home}</span></div><div class="row"><span>取暖</span><span>${b.heat ? '爐火燃燒中' : G.temp < 8 && b.occ.length ? '<b style="color:var(--madder)">沒有柴火</b>' : '無需取暖'}</span></div><h3>住戶</h3><div>${b.occ.map(id => cl(CI.get(id))).join('　') || '<span class="sub">空屋</span>'}</div><h3>家中存糧</h3>${invHtml(b)}`; if (b.type === 'house' && !b.upg) h += `<div class="btns"><button data-a="upg">升級為石屋（石材 24、原木 4）</button></div>`; }
       if (b.type === 'field') { let gs = 0, sown = 0, ripe = 0; for (const v of b.g) { if (v >= 0) { sown++; gs += Math.min(1, v); if (v >= 1) ripe++; } } const nT = b.g.length;
         h += `${cropSel(b)}<div class="row"><span>已播種</span><span>${sown} / ${nT} 格</span></div><div class="row"><span>生長</span>${bar(sown ? gs / sown : 0)}</div><div class="row"><span>照料</span>${bar(b.tend)}</div>${b.blight ? '<div class="row"><span>病害</span><b style="color:var(--madder)">收成將大減</b></div>' : ''}<div class="row"><span>預估滿收</span><span>${fmt(nT * CROPS[b.crop].y)}</span></div>`; }
@@ -2859,13 +2882,14 @@ function drawPanel(force) {
   P.innerHTML = h; P.hidden = false;
 }
 function panelClick(e) {
+  if (e.target.closest('select, input, option')) return; // 下拉選單與輸入框由 change 事件處理，點擊時不重畫
   const t = e.target.closest('[data-a],[data-c],[data-b]'); if (!t) return; Sfx.play('click');
   if (t.dataset.c) { const c = CI.get(+t.dataset.c); if (c) { select({ k: 'c', id: c.id }); jumpTo(c.x, c.y); } return; }
   if (t.dataset.b) { const b = BI.get(+t.dataset.b); if (b) { select({ k: 'b', id: b.id }); jumpTo(b.ex, b.ey); } return; }
   const a = t.dataset.a, v = t.dataset.v, s = UI.sel; if (a === 'close') { selectNone(); return; }
   if (a === 'follow') { UI.follow = !UI.follow; drawPanel(true); return; } if (a === 'm') { openModal(v); return; }
   const b = s && s.k === 'b' && BI.get(s.id); if (!b) return; const D = BUILD[b.type];
-  if (a === 'wk') b.workers = clamp(b.workers + +v, 0, D.max); else if (a === 'on') b.on = !b.on; else if (a === 'pri') b.pri = +v; else if (a === 'upg') startUpgrade(b);
+  if (a === 'wk') b.workers = clamp(b.workers + +v, 0, D.max); else if (a === 'on') b.on = !b.on; else if (a === 'staffPri') b.staffPri = !b.staffPri; else if (a === 'pri') b.pri = +v; else if (a === 'upg') startUpgrade(b);
   else if (a === 'splitNow') { b.splitNow = !b.splitNow; if (b.splitNow) b.split = true; }
   else if (a === 'split') b.split = b.split === false; else if (a === 'slaughter') b.slaughter = b.slaughter === false;
   else if (a === 'cut') b.cut = !b.cut; else if (a === 'plant') b.plant = !b.plant; else if (a === 'lim') b.limit = clamp(b.limit + +v, 0, 2000);
@@ -2956,6 +2980,7 @@ function drawModal() {
 function tradeRead() { const give = {}, get = {}, seeds = [], animals = {}; for (const el of $('win').querySelectorAll('input')) { const v = Math.max(0, Math.floor(+el.value || 0)); if (el.dataset.g && v) get[el.dataset.g] = Math.min(v, +el.max); else if (el.dataset.p && v) give[el.dataset.p] = Math.min(v, +el.max); else if (el.dataset.an && v) animals[el.dataset.an] = Math.min(v, +el.max); else if (el.dataset.s && el.checked) seeds.push(el.dataset.s); } return [give, get, seeds, animals]; }
 function tradeSum() { const el = $('tsum'); if (!el) return; const [gv, tv] = tradeValue(...tradeRead()); el.innerHTML = `付出價值 <b class="num">${fmt(gv)}</b>　換取價值 <b class="num">${fmt(tv)}</b>　${gv >= tv ? (tv ? '可以成交' : '') : '<span style="color:var(--madder)">尚差 ' + fmt(tv - gv) + '</span>'}`; $('deal').disabled = !(tv > 0 && gv >= tv); }
 function modalClick(e) {
+  if (e.target.closest('select, option')) return; // 下拉選單由 change 事件處理，點擊時不重畫
   const pr = e.target.closest('.prow'); if (pr) { const c = CI.get(+pr.dataset.c); if (c) { Sfx.play('click'); closeModal(); select({ k: 'c', id: c.id }); if (c.hid) { const b = BI.get(c.inB) || BI.get(c.home); if (b) jumpTo(b.ex, b.ey); } else jumpTo(c.x, c.y); R.ct.dist = Math.min(R.ct.dist, 24); } return; }
   const lg = e.target.closest('.logl div'); if (lg && lg.dataset.x) { jumpTo(+lg.dataset.x, +lg.dataset.y); closeModal(); return; }
   const t = e.target.closest('[data-a]'); if (!t) return; Sfx.play('click'); const a = t.dataset.a, v = t.dataset.v;
