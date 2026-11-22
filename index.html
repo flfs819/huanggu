@@ -129,7 +129,7 @@ kbd { border: 1px solid var(--edge2); border-radius: 2px; padding: 0 5px; font-f
 // ═══ data.js ═══
 'use strict';
 // ───────────────────────── 常數與資料表 ─────────────────────────
-const VERSION = '0.09';      // 遊戲版本（每次發佈加 0.01）
+const VERSION = '0.10';      // 遊戲版本（每次發佈加 0.01）
 const YEAR = 600;          // 一年 = 600 模擬秒（1x 速度下 10 分鐘，10x 下 1 分鐘）
 const AGE_RATE = 3;        // 居民每曆年老化 3 歲
 const CARRY = 100;         // 居民負重上限
@@ -467,7 +467,8 @@ function cons(r, a) { G.yr.cons[r] = (G.yr.cons[r] || 0) + a; }
 const inv = (b, r) => b.inv[r] || 0;
 function invW(b) { let s = 0; for (const k in b.inv) s += b.inv[k] * RES[k].w; return s; }
 function capOf(b) { const d = BUILD[b.type]; return d.cap || (d.capPer ? d.capPer * b.w * b.d : 1e6); }
-function accepts(b, r) { const s = BUILD[b.type].store; if (!s || b.st !== 'ok') return false; const c = RES[r].cls; return s === 'all' || s === 'trade' || (s === 'raw' && c === 'raw') || (s === 'in' && c !== 'raw'); }
+const MARKET_OK = (r) => RES[r].cls === 'food' || r === 'firewood' || r === 'tool' || r === 'coat' || r === 'warmcoat' || r === 'ale'; // 市場只放生活物資
+function accepts(b, r) { const s = BUILD[b.type].store; if (!s || b.st !== 'ok') return false; if (b.type === 'market' && !MARKET_OK(r)) return false; const c = RES[r].cls; return s === 'all' || s === 'trade' || (s === 'raw' && c === 'raw') || (s === 'in' && c !== 'raw'); }
 function addInv(b, r, a) { if (a > 0) b.inv[r] = (b.inv[r] || 0) + a; }
 function takeInv(b, r, a) { const h = b.inv[r] || 0; a = Math.min(a, h); if (a > 0) { if (h - a < 0.01) delete b.inv[r]; else b.inv[r] = h - a; } return a > 0 ? a : 0; }
 const spaceFor = (b, r) => Math.floor((capOf(b) - invW(b)) / RES[r].w);
@@ -790,9 +791,10 @@ function planEat(c) {
   return setPlan(c, [goB(s, '前往糧倉取得食物'), work(1.5, 0, '進食', true), act(c => eatFrom(s, c))]);
 }
 // 住宅補給：優先使用服務範圍內的市場
+function inMarket(m, h) { return Math.hypot(h.ex + 0.5 - (m.x + m.w / 2), h.ey + 0.5 - (m.y + m.d / 2)) <= BUILD.market.radius; }
 function srcForHouse(h, has) {
   let best = null, bd = 1e9; const reg = regAt(h.ex, h.ey);
-  for (const b of G.bld) { if (b.type !== 'market' || b.st !== 'ok') continue; const d = dist(h.ex, h.ey, b.ex, b.ey); if (d > BUILD.market.radius || !has(b)) continue; if (regAt(b.ex, b.ey) !== reg) continue; if (d < bd) { bd = d; best = b; } }
+  for (const b of G.bld) { if (b.type !== 'market' || b.st !== 'ok') continue; if (!inMarket(b, h) || !has(b)) continue; const d = dist(h.ex, h.ey, b.ex, b.ey); if (regAt(b.ex, b.ey) !== reg) continue; if (d < bd) { bd = d; best = b; } }
   if (best) return best;
   for (const b of G.bld) { if (!BUILD[b.type].store || b.st !== 'ok' || b.type === 'tradepost') continue; if (!has(b)) continue; if (regAt(b.ex, b.ey) !== reg) continue; const d = dist(h.ex, h.ey, b.ex, b.ey); if (d < bd) { bd = d; best = b; } }
   return best;
@@ -1242,6 +1244,10 @@ function planLabor(c, clearOnly) {
     for (let q = 0; q < m; q++) { const ix = (st + q) % G.marks.length, i = G.marks[ix]; if (!W.mark[i] || (!W.treeAt[i] && !W.rockAt[i])) { G.marks.splice(ix, 1); W.mark[i] = 0; q--; if (!G.marks.length) break; continue; } const t = W.treeAt[i], r = W.rockAt[i]; if (t && W.tClaim[t - 1] && CI.has(W.tClaim[t - 1])) continue; if (r && W.rClaim[r - 1] && CI.has(W.rClaim[r - 1])) continue; const d = dist(c.x, c.y, i % n, (i / n) | 0) + ((G.markPri === 'rock' && t) || (G.markPri === 'tree' && r) ? 10000 : 0); if (d < bd && canReach(c, i % n, (i / n) | 0, true)) { bd = d; bi = i; } }
     if (bi >= 0) return planClear(c, bi); }
   if (clearOnly) return false;
+  // 把市場裡不該放的原料（舊存檔留下的原木、礦石等）搬回倉庫
+  for (const m of G.bld) { if (m.type !== 'market' || m.st !== 'ok') continue; let r = null; for (const k in m.inv) if (!MARKET_OK(k) && m.inv[k] >= 1) { r = k; break; } if (!r) continue;
+    const dest = findStore(m.ex, m.ey, r, reg); if (!dest || !canReach(c, m.ex, m.ey)) continue;
+    return setPlan(c, [goB(m, '把' + RES[r].n + '搬出市場'), act(c => { const a = takeInv(m, r, Math.max(1, Math.floor(CARRY / RES[r].w))); if (a <= 0) return false; carryAdd(c, r, a); }), goB(dest, '運送' + RES[r].n), deposit(dest)]); }
   // 撿拾散落物資
   let bdp = null, bd = 1e9; for (const d of G.drops) { if (d.claim && CI.has(d.claim)) continue; const q = dist(c.x, c.y, d.x, d.y); if (q < bd && canReach(c, d.x, d.y, true)) { const dest = findStore(d.x, d.y, d.r, reg); if (!dest) continue; bd = q; bdp = d; } }
   if (bdp) { const d = bdp, dest = findStore(d.x, d.y, d.r, reg); d.claim = c.id; c.clD = d.id;
@@ -2879,6 +2885,7 @@ function drawPanel(force) {
       if (b.type === 'mine') h += `<div class="row"><span>開採</span><select data-a="prod"><option value="iron" ${b.prod === 'iron' ? 'selected' : ''}>鐵礦</option><option value="coal" ${b.prod === 'coal' ? 'selected' : ''}>煤炭</option></select></div>`;
       if (b.type === 'tailor') h += `<h3>衣物種類</h3><div class="row"><span>一般衣物</span><span>約 0°C 以下會受寒　全鎮 ${fmt(G.totals.coat)}</span></div><div class="row"><span>保暖大衣</span><span>可抵禦約 −8°C　全鎮 ${fmt(G.totals.warmcoat)}</span></div><div class="sub">皮衣與羊毛衣都是一般衣物，只是原料不同。居民會優先領取保暖大衣。${b.prod === 'auto' ? '自動模式目前製作：' + (b.autoPick ? RECIPES.tailor[b.autoPick].n : '等待原料') + '。' : ''}</div>`;
       if (RECIPES[b.type]) { const rs = RECIPES[b.type], ou = Object.keys(rs[b.prod].out)[0]; h += `<div class="row"><span>生產</span><select data-a="prod">${Object.keys(rs).map(k => `<option value="${k}" ${b.prod === k ? 'selected' : ''}>${rs[k].n}</option>`).join('')}</select></div><div class="row"><span>庫存上限</span><span class="step"><button data-a="lim" data-v="-20">−</button><b class="num">${b.limit}</b><button data-a="lim" data-v="20">＋</button></span></div><div class="row"><span>全鎮${RES[ou].n}</span><span class="num">${fmt(G.totals[ou])}</span></div><h3>作坊內</h3>${invHtml(b)}`; }
+      if (b.type === 'market') { const hs = G.bld.filter(o => o.st === 'ok' && BUILD[o.type].home && inMarket(b, o)), ppl = hs.reduce((n, o) => n + o.occ.length, 0); h += `<div class="row"><span>服務範圍</span><span>半徑 ${BUILD.market.radius} 格（地圖上的圓圈）</span></div><div class="row"><span>範圍內住宅</span><span>${hs.length} 棟・${ppl} 人</span></div><div class="sub">圓圈內住宅的居民會到市場拿食物、柴火、衣物、工具與麥酒，不必跑到遠處的倉庫。方框是市場本身的佔地。</div>`; }
       if (D.store) { h += `<div class="row"><span>容量</span>${bar(invW(b) / capOf(b), true)}</div><h3>庫存</h3>${invHtml(b)}`; }
       if (b.type === 'cart') { const wait = Object.keys(ANIMALS).filter(k => (G.herd[k] || 0) > 0); h += `<h3>隨行牲畜</h3><div>${wait.length ? wait.map(k => ANIMALS[k].n + ' ' + G.herd[k] + ' 隻').join('、') + '<div class="sub">建造牧場並指派牧民後，牲畜會被趕進牧場。一座牧場只養一種牲畜。</div>' : '<span class="sub">無</span>'}</div>`; }
       if (b.type === 'tradepost') { if (!b.auto) b.auto = { on: false, buy: {}, seeds: true, herd: true }; const nb = Object.keys(b.auto.buy).length, ns = Object.keys(b.want).length; const fm = b.auto.food && b.auto.food.mode !== 'off'; h += `<div class="row"><span>自動交易</span><span>${b.auto.on ? '<b>開啟</b>' : '<b style="color:var(--madder)">關閉</b>'}　賣出 ${ns} 項・買入 ${nb + (fm ? 1 : 0)} 項</span></div>` + (!b.auto.on && (nb || fm || ns) ? '<div class="sub" style="color:var(--ochre)">已有交易設定，但自動交易是關閉的，商船來時不會自動成交。請到「自動交易設定」最上方打開。</div>' : ''); }
