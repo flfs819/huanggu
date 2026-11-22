@@ -102,6 +102,7 @@ canvas.chart { width: 100%; height: 150px; display: block; background: #1b1814; 
 .rng b { min-width: 3.2em; text-align: right; }
 @media (max-width: 640px) { .rngrow { flex-direction: column; align-items: stretch; gap: 4px; } .rngrow .rng { justify-content: stretch; } .rng input[type=range] { width: auto; flex: 1 1 auto; height: 28px; } }
 .seal small.sz { color: var(--ochre); opacity: .85; }
+.tl { padding: 3px 0; border-top: 1px dotted rgba(120,105,80,.35); font-size: 12.5px; line-height: 1.45; } .tl small { color: var(--dim); margin-right: 4px; }
 kbd { border: 1px solid var(--edge2); border-radius: 2px; padding: 0 5px; font-family: inherit; background: var(--ink); }
 @media (max-width: 640px) { body { font-size: 12.5px; } #panel { top: auto; bottom: calc(var(--barH, 96px) + 8px); max-height: 46%; right: max(16px, env(safe-area-inset-right, 0px)); } #warn { max-width: 62vw; } #feed { display: none; } .seal { min-width: 46px; } #setup { align-items: center; } #setup h1 { font-size: 26px; } }
 @media (prefers-reduced-motion: reduce) { .f { transition: none; } }
@@ -128,7 +129,7 @@ kbd { border: 1px solid var(--edge2); border-radius: 2px; padding: 0 5px; font-f
 // ═══ data.js ═══
 'use strict';
 // ───────────────────────── 常數與資料表 ─────────────────────────
-const VERSION = '0.07';      // 遊戲版本（每次發佈加 0.01）
+const VERSION = '0.08';      // 遊戲版本（每次發佈加 0.01）
 const YEAR = 600;          // 一年 = 600 模擬秒（1x 速度下 10 分鐘，10x 下 1 分鐘）
 const AGE_RATE = 3;        // 居民每曆年老化 3 歲
 const CARRY = 100;         // 居民負重上限
@@ -204,7 +205,7 @@ const BUILD = {
   sroad:     { n: '石板路', cat: 'road', tool: 'road', ic: '磚', desc: '每格 1 石材，通行效率最佳。跨越水面時會建成木橋。' },
   field:     { n: '農田', cat: 'food', area: 1, min: 3, maxSide: 14, cost: {}, workPer: 0.35, max: 4, prof: 'farmer', ic: '田', desc: '拖曳劃定範圍。春播、夏耘、秋收。' },
   orchard:   { n: '果園', cat: 'food', area: 1, min: 4, maxSide: 14, cost: {}, workPer: 0.3, max: 3, prof: 'farmer', ic: '果', desc: '果樹需數年才能結果，會老化，需補種。' },
-  pasture:   { n: '牧場', cat: 'food', area: 1, min: 4, maxSide: 18, costPer: { log: 0.12 }, workPer: 0.2, max: 2, prof: 'herder', ic: '牧', desc: '拖曳劃定範圍，飼養雞、羊或牛（一座只養一種）。拓荒者帶來的牲畜會被趕進來；更多種類可向商船購買。' },
+  pasture:   { n: '牧場', cat: 'food', area: 1, min: 4, maxSide: 18, costPer: { log: 0.12 }, workPer: 0.2, max: 2, prof: 'herder', ic: '牧', desc: '拖曳劃定範圍，飼養雞、羊或牛（一座只養一種）。蓋好後點選牧場指定要養什麼，牧民才會把待安置的牲畜趕進來；更多牲畜可向商船購買。' },
   fishdock:  { n: '漁夫碼頭', cat: 'food', w: 3, d: 2, cost: { log: 22, stone: 6 }, work: 60, max: 4, prof: 'fisher', needs: 'water', radius: 9, wood: 1, ic: '漁', desc: '正面朝向水域，最前排可伸入淺水。選取後地圖會標出可建造的位置。過度集中會降低漁獲。' },
   gatherer:  { n: '採集小屋', cat: 'food', w: 3, d: 3, cost: { log: 26, stone: 8 }, work: 60, max: 4, prof: 'gatherer', radius: 14, wood: 1, ic: '採', desc: '在成熟森林採集漿果、蘑菇與根莖。' },
   hunter:    { n: '狩獵小屋', cat: 'food', w: 3, d: 3, cost: { log: 30, stone: 10 }, work: 60, max: 3, prof: 'hunter', radius: 17, wood: 1, ic: '獵', desc: '獵捕野鹿，取得鹿肉與皮革。' },
@@ -552,7 +553,7 @@ function finishBuilding(b) {
   if (D.home) { b.occ = b.occ || []; b.fuelT = 0; b.heat = false; b.fetch = {}; b.diet = { grain: 0.25, veg: 0.25, fruit: 0.25, protein: 0.25 }; }
   if (b.type === 'field') { b.crop = b.crop || firstKey(G.seeds) || 'potato'; b.g = new Array(tiles).fill(-1); b.tend = 0.5; b.blight = 0; }
   if (b.type === 'orchard') { b.fruit = b.fruit || firstKey(G.fruits) || 'apple'; b.slots = []; for (let j = 0; j < b.d; j += 2) for (let i = 0; i < b.w; i += 2) b.slots.push({ x: i, y: j, age: -1 }); b.ripe = 0; b.picked = true; }
-  if (b.type === 'pasture') { b.animal = b.animal || bestHerd(); b.count = 0; b.cap = 0; b.brT = 0; b.sheared = 0; b.eggT = 0; }
+  if (b.type === 'pasture') { b.animal = b.animalSet ? b.animal : null; b.count = 0; b.cap = 0; b.brT = 0; b.sheared = 0; b.eggT = 0; }
   if (b.type === 'forester') { b.cut = true; b.plant = true; }
   if (D.left) b.left = Math.round(D.left * (G.P.resources === 'rich' ? 1.3 : G.P.resources === 'poor' ? 0.7 : 1));
   if (b.type === 'mine') b.prod = 'iron';
@@ -560,7 +561,7 @@ function finishBuilding(b) {
   if (b.type === 'tradepost') { b.want = {}; b.auto = { on: false, buy: {}, seeds: true, herd: true, food: { mode: 'off', amt: 1000, kinds: {} } }; }
   if (b.type === 'cemetery') { b.graves = []; }
   if (b.type === 'school') b.staffT = 0;
-  if (b.type !== 'cart') { logEv(`${D.n}落成。`, 'good', b.ex, b.ey); fx('build', b.ex, b.ey); }
+  if (b.type !== 'cart') { logEv(b.type === 'pasture' && !b.animal ? '牧場落成。請點選牧場，指定要養的牲畜。' : `${D.n}落成。`, 'good', b.ex, b.ey); fx('build', b.ex, b.ey); }
   refreshWalk(); W.tileDirty = true;
 }
 function firstKey(o) { for (const k in o) if (o[k]) return k; return null; }
@@ -1095,13 +1096,13 @@ const JOBS = {
     return false;
   },
   pasture(c, b, reg) {
-    if (b.count <= 0 && !((G.herd[b.animal] || 0) > 0) && !b.animalSet) { const k = Object.keys(ANIMALS).find(a => (G.herd[a] || 0) > 0); if (k) b.animal = k; }
+    if (!b.animal) { c.st = '牧場尚未指定要養的牲畜'; return false; }
     const A = ANIMALS[b.animal]; b.cap = Math.floor(b.w * b.d / A.tiles);
     if (b.count > 0 && (G.herd[b.animal] || 0) > 0 && b.count < b.cap) { const n = Math.min(G.herd[b.animal], b.cap - b.count); G.herd[b.animal] -= n; b.count += n; b.gd = true; logEv(`牧民將新來的 ${n} 隻${A.n}趕入牧場。`, 'info', b.ex, b.ey); }
     if (b.count <= 0) {
       if ((G.herd[b.animal] || 0) > 0) { const n = Math.min(G.herd[b.animal], b.cap); G.herd[b.animal] -= n; b.count = n; logEv(`牧民將 ${n} 隻${A.n}趕入牧場。`, 'info', b.ex, b.ey); }
       else { // 從其他牧場分一群過來；尚未指定牲畜的空牧場會接手對方的種類
-        let src = null; for (const o of G.bld) if (o.type === 'pasture' && o !== b && o.st === 'ok' && o.count >= 6 && (o.animal === b.animal || !b.animalSet) && (!src || (o.animal === b.animal) > (src.animal === b.animal) || o.count / Math.max(1, o.cap) > src.count / Math.max(1, src.cap))) src = o;
+        let src = null; for (const o of G.bld) if (o.type === 'pasture' && o !== b && o.st === 'ok' && o.count >= 6 && o.animal === b.animal && (!src || (o.animal === b.animal) > (src.animal === b.animal) || o.count / Math.max(1, o.cap) > src.count / Math.max(1, src.cap))) src = o;
         if (!src) { c.st = '牧場沒有牲畜（可從其他牧場分群，或向商船購買）'; return false; }
         if (!canReach(c, src.ex, src.ey)) return false;
         return setPlan(c, [goB(src, '前往其他牧場分群'), work(3, 5, '挑選牲畜', true), act(c => { if (src.count < 4 || b.count > 0) return false; const A2 = ANIMALS[src.animal], cap = Math.floor(b.w * b.d / A2.tiles), k = Math.min(cap, Math.max(2, Math.floor(src.count * 0.4))); src.count -= k; src.gd = true; c.herdMove = { a: src.animal, k }; }), goB(b, '把牲畜趕回牧場'), act(c => { const m = c.herdMove; c.herdMove = null; if (!m) return; if (b.count > 0 && b.animal !== m.a) { G.herd[m.a] = (G.herd[m.a] || 0) + m.k; return; } b.animal = m.a; b.count += m.k; b.gd = true; logEv(`牧民從另一座牧場分出 ${m.k} 隻${ANIMALS[m.a].n}。`, 'info', b.ex, b.ey); })]);
@@ -1113,7 +1114,7 @@ const JOBS = {
     const x = b.x + ri(b.w), y = b.y + ri(b.d), f = yfrac();
     if (A.by === 'wool' && f > 0.15 && f < 0.45 && b.sheared !== yearOf() && b.count > 0) return setPlan(c, [go(x, y, '前往牧場'), work(6, 5, '剪羊毛'), act(c => { if (b.sheared === yearOf()) return; b.sheared = yearOf(); const a = Math.round(b.count * A.byRate); addInv(b, 'wool', a); prod('wool', a, b); })]);
     // 分群目標：空牧場（未指定種類，或指定的就是這種牲畜）優先，其次是未過半的同種牧場
-    const emptyOk = (o) => o.count <= 0 && (o.animal === b.animal || !o.animalSet) && !((G.herd[o.animal] || 0) > 0 && o.animal !== b.animal);
+    const emptyOk = (o) => o.count <= 0 && o.animal === b.animal && !((G.herd[o.animal] || 0) > 0);
     const splitDst = () => { let dst = null, ds = 1e9; for (const o of G.bld) { if (o.type !== 'pasture' || o === b || o.st !== 'ok') continue; const oc = Math.floor(o.w * o.d / A.tiles); let sc; if (emptyOk(o)) sc = 0; else if (o.animal === b.animal && o.count > 0 && o.count < oc * 0.5) sc = 1 + o.count / oc; else continue; if (sc < ds) { ds = sc; dst = o; } } return dst; };
     const wantSplit = b.split !== false && (b.splitNow || b.count > Math.max(2, b.cap * 0.85) || (b.count >= Math.max(6, b.cap * 0.6) && G.bld.some(o => o.type === 'pasture' && o !== b && o.st === 'ok' && emptyOk(o))));
     if (wantSplit && b.count >= 4) {
@@ -1293,7 +1294,7 @@ function tickFast(dt) {
       if (f > 0.2 && f < 0.62 && T > 8 && b.ripe < 1) { b.ripe = Math.min(1, b.ripe + dt / (YEAR * 0.26) * (0.6 + 0.4 * b.tend)); }
       if (T < -1.5 && b.ripe > 0 && f > 0.55) { if (b.slots.some(s => s.age >= 3 && !s.pk) && b.frostY !== yearOf()) { b.frostY = yearOf(); logEv('霜凍毀掉了果園中尚未採收的水果。', 'bad', b.ex, b.ey); } b.ripe = 0; b.gd = true; }
     } else if (b.type === 'pasture') {
-      const A = ANIMALS[b.animal]; b.care = Math.max(0, (b.care || 0) - dt / 45); b.cap = Math.floor(b.w * b.d / A.tiles);
+      if (!b.animal) continue; const A = ANIMALS[b.animal]; b.care = Math.max(0, (b.care || 0) - dt / 45); b.cap = Math.floor(b.w * b.d / A.tiles);
       if (b.count >= 2 && b.care > 0.15) { if (b.count < b.cap) { b.brF = (b.brF || 0) + dt * (b.count / 2) / A.breed; while (b.brF >= 1) { b.brF--; b.count++; b.gd = true; } }
         if (A.by === 'egg') { b.eggF = (b.eggF || 0) + dt * b.count * A.byRate / YEAR; if (b.eggF >= 5) { b.eggF -= 5; addInv(b, 'egg', 5); prod('egg', 5, b); } } }
     }
@@ -1415,14 +1416,16 @@ function boatTick(dt) {
 }
 const SEED_V = 500, FRUIT_V = 700, HERD_V = { chicken: 260, sheep: 520, cow: 820 };
 function tradeValue(give, get, seeds, animals) { let gv = 0, tv = 0; for (const r in give) gv += give[r] * RES[r].v; for (const r in get) tv += get[r] * RES[r].v * 1.25; for (const s of seeds) tv += CROPS[s] ? SEED_V : FRUIT_V; for (const a in animals) tv += animals[a] * HERD_V[a]; return [gv, tv]; }
-function doTrade(give, get, seeds, animals) {
+function tradeLog(post, text) { if (!post) return; post.tlog = post.tlog || []; post.tlog.unshift({ y: yearOf(), s: seasonOf(), m: text }); if (post.tlog.length > 8) post.tlog.length = 8; }
+function tradeDesc(give, get, seeds, animals) { const L = (o) => Object.keys(o).filter(k => o[k] > 0).map(k => RES[k].n + ' ' + Math.round(o[k])).join('、'); const got = [L(get), seeds.map(s => (CROPS[s] || FRUITS[s]).n + '種子').join('、'), Object.keys(animals).map(a => ANIMALS[a].n + ' ' + animals[a] * ANIMALS[a].herd + ' 隻').join('、')].filter(Boolean).join('、'); return `付出 ${L(give) || '無'}　換得 ${got || '無'}`; }
+function doTrade(give, get, seeds, animals, auto) {
   const B = G.boat, post = B && BI.get(B.post); if (!B || B.phase !== 'dock' || !post) return '商船不在港口';
   const [gv, tv] = tradeValue(give, get, seeds, animals); if (gv < tv) return '提供的貨物價值不足';
   for (const r in give) if (inv(post, r) < give[r]) return '貿易站內的' + RES[r].n + '不足';
   for (const r in give) takeInv(post, r, give[r]); for (const r in get) { addInv(post, r, get[r]); B.goods[r] -= get[r]; if (B.goods[r] <= 0) delete B.goods[r]; }
   for (const s of seeds) { if (CROPS[s]) G.seeds[s] = 1; else G.fruits[s] = 1; B.seeds = B.seeds.filter(x => x !== s); logEv(`取得了${(CROPS[s] || FRUITS[s]).n}的種子。`, 'good'); }
   for (const a in animals) { G.herd[a] = (G.herd[a] || 0) + animals[a] * ANIMALS[a].herd; B.animals[a] -= animals[a]; if (B.animals[a] <= 0) delete B.animals[a]; logEv(`購得一群${ANIMALS[a].n}，需要牧場與牧民安置。`, 'good'); }
-  fx('trade'); return null;
+  tradeLog(post, (auto ? '自動：' : '手動：') + tradeDesc(give, get, seeds, animals)); fx('trade'); return null;
 }
 // 自動交易：以「賣出清單」中已運到貿易站的物資付款，依序買入「買入清單」中全鎮不足的物資
 function autoTrade(post) {
@@ -1444,12 +1447,12 @@ function autoTrade(post) {
   if (A.seeds) for (const s of B.seeds) { const v = CROPS[s] ? SEED_V : FRUIT_V; if (cost + v <= budget) { seeds.push(s); cost += v; } }
   if (A.herd) for (const a in B.animals) { if ((G.herd[a] || 0) > 0 || G.bld.some(p => p.type === 'pasture' && p.animal === a && p.count > 0)) continue; const v = HERD_V[a]; if (cost + v <= budget) { animals[a] = 1; cost += v; } }
   const needFood = F && F.mode !== 'off' && (F.mode === 'fixed' ? F.amt > 0 : (F.amt - (G.totals.allFood || 0)) > 0), needBuy = Object.keys(A.buy).some(r => A.buy[r] - (G.totals[r] || 0) > 0);
-  if (cost <= 0 && !needFood && !needBuy && !(A.seeds && B.seeds.length)) { logEv('自動交易：各項存量都已達目標，這次不需要購買。', 'info', post.ex, post.ey); return null; }
-  if (cost <= 0) { logEv(pay.length ? '自動交易：商船沒有你要的貨物，或貿易站的備貨不足以交換。' : '自動交易：貿易站沒有可賣出的備貨（請在自動交易設定中加入賣出項目）。', 'info', post.ex, post.ey); return null; }
+  if (cost <= 0 && !needFood && !needBuy && !(A.seeds && B.seeds.length)) { logEv('自動交易：各項存量都已達目標，這次不需要購買。', 'info', post.ex, post.ey); tradeLog(post, '自動：存量都已達目標，沒有購買'); return null; }
+  if (cost <= 0) { logEv(pay.length ? '自動交易：商船沒有你要的貨物，或貿易站的備貨不足以交換。' : '自動交易：貿易站沒有可賣出的備貨（請在自動交易設定中加入賣出項目）。', 'info', post.ex, post.ey); tradeLog(post, pay.length ? '自動：商船沒有要買的貨物，或備貨不足以交換' : '自動：貿易站沒有可賣出的備貨'); return null; }
   // 付款：依清單順序，從貿易站備貨中湊足價值
   const give = {}; let need = cost;
   for (const r of pay) { if (need <= 0) break; const a = Math.min(Math.floor(inv(post, r)), Math.ceil(need / RES[r].v)); if (a > 0) { give[r] = a; need -= a * RES[r].v; } }
-  const err = doTrade(give, get, seeds, animals); if (err) { logEv('自動交易失敗：' + err, 'bad', post.ex, post.ey); return err; }
+  const err = doTrade(give, get, seeds, animals, true); if (err) { logEv('自動交易失敗：' + err, 'bad', post.ex, post.ey); tradeLog(post, '自動交易失敗：' + err); return err; }
   const fmtL = (o) => Object.keys(o).map(k => RES[k].n + ' ' + o[k]).join('、');
   const got = [fmtL(get), seeds.map(s => (CROPS[s] || FRUITS[s]).n + '種子').join('、'), Object.keys(animals).map(a => ANIMALS[a].n + '一群').join('、')].filter(Boolean).join('、');
   logEv(`自動交易：以 ${fmtL(give)} 換得 ${got}。`, 'good', post.ex, post.ey); return null;
@@ -1498,7 +1501,7 @@ function loadGame(str) {
   for (let i = 0; i < D.w.roads.length; i += 2) w.road[D.w.roads[i]] = D.w.roads[i + 1]; for (const i of D.w.pits) w.tt[i] = 3;
   G = D.G; CI = new Map(); BI = new Map(); FX.length = 0; LIFT.clear();
   for (const c of G.cits) { c.plan = []; c.hid = false; c.inB = 0; c.byFire = false; c.keep = false; c.idle = Math.random(); CI.set(c.id, c); }
-  for (const b of G.bld) { BI.set(b.id, b); b.dirty = true; b.gd = true; if (b.fetch) b.fetch = {}; const S = siteOf(b); if (S) S.inc = {}; const D2 = BUILD[b.type];
+  for (const b of G.bld) { if (b.type === 'pasture' && b.st === 'ok' && !(b.count > 0) && !b.animalSet) b.animal = null; BI.set(b.id, b); b.dirty = true; b.gd = true; if (b.fetch) b.fetch = {}; const S = siteOf(b); if (S) S.inc = {}; const D2 = BUILD[b.type];
     for (let y = b.y; y < b.y + b.d; y++) for (let x = b.x; x < b.x + b.w; x++) { w.occ[y * n + x] = b.id; if (!D2.area && !D2.flat) w.blk[y * n + x] = 1; } }
   for (const d of G.drops) d.claim = 0; for (const k in G.roadJobs) G.roadJobs[k].claim = 0; for (const d of G.deer) d.claim = 0;
   for (const i of G.marks) w.mark[i] = 1;
@@ -2558,7 +2561,7 @@ const DEER = { sz: 0.42, neck: 1.1 }, DEERC = lin(0x8a6a48), ACOL = {};
 function syncAnimals(time, dt, act) {
   let i = 0;
   for (const d of G.deer) { if (i >= 900) break; animal(i++, d.x, d.y, d.dx || 1, d.dy || 0, DEER, DEERC, time, d.mv); }
-  for (const b of G.bld) { if (b.type !== 'pasture' || b.st !== 'ok') continue; const A = ANIMALS[b.animal], n = Math.min(60, Math.round(b.count || 0)); let h = R.herd[b.id]; if (!h) h = R.herd[b.id] = [];
+  for (const b of G.bld) { if (b.type !== 'pasture' || b.st !== 'ok' || !b.animal) continue; const A = ANIMALS[b.animal], n = Math.min(60, Math.round(b.count || 0)); let h = R.herd[b.id]; if (!h) h = R.herd[b.id] = [];
     while (h.length < n) h.push({ x: b.x + 0.5 + Math.random() * (b.w - 1), y: b.y + 0.5 + Math.random() * (b.d - 1), tx: 0, ty: 0, t: 0, dx: 1, dy: 0 }); h.length = n;
     const col = ACOL[b.animal] || (ACOL[b.animal] = lin(A.col));
     for (const a of h) { a.t -= dt; if (a.t <= 0) { a.t = 2 + Math.random() * 7; a.tx = b.x + 0.4 + Math.random() * (b.w - 0.8); a.ty = b.y + 0.4 + Math.random() * (b.d - 0.8); } const dx = a.tx - a.x, dy = a.ty - a.y, q = Math.hypot(dx, dy); let mv = 0; if (q > 0.15) { const v = Math.min(q, 0.35 * dt); a.x += dx / q * v; a.y += dy / q * v; a.dx = dx / q; a.dy = dy / q; mv = 1; } if (i < 900) animal(i++, a.x, a.y, a.dx, a.dy, A, col, time, mv); }
@@ -2856,7 +2859,11 @@ function drawPanel(force) {
       if (b.type === 'field') { let gs = 0, sown = 0, ripe = 0; for (const v of b.g) { if (v >= 0) { sown++; gs += Math.min(1, v); if (v >= 1) ripe++; } } const nT = b.g.length;
         h += `${cropSel(b)}<div class="row"><span>已播種</span><span>${sown} / ${nT} 格</span></div><div class="row"><span>生長</span>${bar(sown ? gs / sown : 0)}</div><div class="row"><span>照料</span>${bar(b.tend)}</div>${b.blight ? '<div class="row"><span>病害</span><b style="color:var(--madder)">收成將大減</b></div>' : ''}<div class="row"><span>預估滿收</span><span>${fmt(nT * CROPS[b.crop].y)}</span></div>`; }
       if (b.type === 'orchard') { const al = b.slots.filter(s => s.age >= 0).length, mt = b.slots.filter(s => s.age >= 3).length; h += `${fruitSel(b)}<div class="row"><span>樹木</span><span>${al} / ${b.slots.length} 棵（結果 ${mt}）</span></div><div class="row"><span>果實成熟</span>${bar(b.ripe)}</div>` + (al ? '<div class="sub">更換品種會清除現有果樹並重新種植。</div>' : ''); }
-      if (b.type === 'pasture') { const A = ANIMALS[b.animal], wait = Object.keys(ANIMALS).filter(k => (G.herd[k] || 0) > 0); h += `<div class="row"><span>牲畜</span><select data-a="animal" ${b.count > 0 ? 'disabled' : ''}>${Object.keys(ANIMALS).map(k => `<option value="${k}" ${b.animal === k ? 'selected' : ''}>${ANIMALS[k].n}（待安置 ${G.herd[k] || 0}）</option>`).join('')}</select></div><div class="row"><span>數量</span><span>${b.count} / ${Math.floor(b.w * b.d / A.tiles)}</span></div><div class="row"><span>照料</span>${bar(b.care || 0)}</div><div class="row"><span>分群</span><span class="step"><button data-a="splitNow" class="${b.splitNow ? 'on' : ''}" ${b.count >= 4 ? '' : 'disabled'}>${b.splitNow ? '等待牧民分群…' : '立即分群到空牧場'}</button></span></div><div class="row"><span>滿額時</span><span class="step"><button data-a="split" class="${b.split !== false ? 'on' : ''}">分群到其他牧場</button><button data-a="slaughter" class="${b.slaughter !== false ? 'on' : ''}">屠宰</button></span></div><div class="sub">牲畜會自行繁殖，數量越多生得越快。有空牧場時，牧民達到六成就會分一群過去，讓兩座牧場一起繁殖；也可以按「立即分群」。數量接近上限、又沒有地方可分時才屠宰取肉。</div>` + (b.count > 0 ? '' : (G.herd[b.animal] || 0) > 0 ? `<div class="sub">牧民到場後，會把 ${G.herd[b.animal]} 隻${A.n}趕進牧場。</div>` : wait.length ? `<div class="sub">目前沒有待安置的${A.n}。請在上方改選：${wait.map(k => ANIMALS[k].n + ' ' + G.herd[k] + ' 隻').join('、')}。</div>` : `<div class="sub">沒有任何待安置的牲畜。可從其他牧場分群（數量達 8 隻以上時），或在貿易站向商船購買。</div>`) + (b.count > 0 && wait.length ? `<div class="sub">另有待安置：${wait.map(k => ANIMALS[k].n + ' ' + G.herd[k] + ' 隻').join('、')}，需另建牧場。</div>` : ''); }
+      if (b.type === 'pasture') { const A = b.animal ? ANIMALS[b.animal] : null, wait = Object.keys(ANIMALS).filter(k => (G.herd[k] || 0) > 0), waitStr = wait.map(k => ANIMALS[k].n + ' ' + G.herd[k] + ' 隻').join('、');
+        h += `<div class="row"><span>牲畜</span><select data-a="animal">${A ? '' : '<option value="" selected>（請選擇）</option>'}${Object.keys(ANIMALS).map(k => `<option value="${k}" ${b.animal === k ? 'selected' : ''}>${ANIMALS[k].n}（待安置 ${G.herd[k] || 0}）</option>`).join('')}</select></div>`;
+        if (!A) h += `<div class="sub" style="color:var(--ochre)">這座牧場還沒指定要養什麼，牧民不會趕任何牲畜進來。${wait.length ? '目前待安置：' + waitStr + '。' : '目前沒有待安置的牲畜，可向商船購買，或指定與其他牧場相同的種類來分群。'}</div>`;
+        else { h += `<div class="row"><span>數量</span><span>${b.count} / ${Math.floor(b.w * b.d / A.tiles)}</span></div><div class="row"><span>照料</span>${bar(b.care || 0)}</div><div class="row"><span>分群</span><span class="step"><button data-a="splitNow" class="${b.splitNow ? 'on' : ''}" ${b.count >= 4 ? '' : 'disabled'}>${b.splitNow ? '等待牧民分群…' : '立即分群到空牧場'}</button></span></div><div class="row"><span>滿額時</span><span class="step"><button data-a="split" class="${b.split !== false ? 'on' : ''}">分群到其他牧場</button><button data-a="slaughter" class="${b.slaughter !== false ? 'on' : ''}">屠宰</button></span></div><div class="sub">牲畜會自行繁殖，數量越多生得越快。牧民只會把牲畜分到「指定養同一種」的牧場：達到六成就分一群給空牧場，也可以按「立即分群」。沒有地方可分時才屠宰取肉。${b.count > 0 ? '換種類時，現有的牲畜會改為待安置，可以再安置到其他牧場。' : ''}</div>`;
+          h += (b.count > 0 ? '' : (G.herd[b.animal] || 0) > 0 ? `<div class="sub">牧民到場後，會把待安置的${A.n}趕進牧場。</div>` : `<div class="sub">目前沒有待安置的${A.n}。可向商船購買，或等其他${A.n}牧場分群過來。</div>`) + (b.count > 0 && wait.some(k => k !== b.animal) ? `<div class="sub">另有待安置：${waitStr}。</div>` : ''); } }
       if (b.type === 'forester') h += `<div class="row"><span>作業</span><span class="step"><button data-a="cut" class="${b.cut ? 'on' : ''}">砍伐</button><button data-a="plant" class="${b.plant ? 'on' : ''}">種植</button></span></div><div class="row"><span>範圍內成樹密度</span>${bar(forestDensity(b, D.radius, 6))}</div>`;
       if (b.type === 'gatherer') h += `<div class="row"><span>森林豐度</span>${bar(forestDensity(b, D.radius, 6))}</div>`;
       if (b.type === 'herbalist') h += `<div class="row"><span>老林豐度</span>${bar(forestDensity(b, D.radius, 12))}</div>`;
@@ -2869,6 +2876,7 @@ function drawPanel(force) {
       if (D.store) { h += `<div class="row"><span>容量</span>${bar(invW(b) / capOf(b), true)}</div><h3>庫存</h3>${invHtml(b)}`; }
       if (b.type === 'cart') { const wait = Object.keys(ANIMALS).filter(k => (G.herd[k] || 0) > 0); h += `<h3>隨行牲畜</h3><div>${wait.length ? wait.map(k => ANIMALS[k].n + ' ' + G.herd[k] + ' 隻').join('、') + '<div class="sub">建造牧場並指派牧民後，牲畜會被趕進牧場。一座牧場只養一種牲畜。</div>' : '<span class="sub">無</span>'}</div>`; }
       if (b.type === 'tradepost') { if (!b.auto) b.auto = { on: false, buy: {}, seeds: true, herd: true }; const nb = Object.keys(b.auto.buy).length, ns = Object.keys(b.want).length; h += `<div class="row"><span>自動交易</span><span>${b.auto.on ? '<b>開啟</b>' : '關閉'}　賣出 ${ns} 項・買入 ${nb} 項</span></div>`; }
+      if (b.type === 'tradepost') h += `<h3>最近的交易</h3>${(b.tlog || []).length ? b.tlog.map(e => `<div class="tl"><small>第 ${e.y} 年${SEASONS[e.s]}</small> ${esc(e.m)}</div>`).join('') : '<div class="sub">還沒有交易紀錄。</div>'}`;
       if (b.type === 'tradepost') { const B = G.boat; h += `<div class="row"><span>商船</span><span>${B ? (B.phase === 'dock' ? '停靠中（' + Math.ceil(B.wait) + ' 秒後離開）' : B.phase === 'in' ? '正在駛來' : '已離港') : '尚未到來'}</span></div><div class="btns"><button data-a="trade" ${B && B.phase === 'dock' ? '' : 'disabled'}>與商人交易</button><button data-a="auto">自動交易設定</button></div>`; }
       if (b.type === 'school') h += `<div class="row"><span>學生</span><span>${b.enr || 0} / ${D.seats}</span></div><div class="row"><span>授課</span><span>${b.staffT > G.t ? '進行中' : '教師不在'}</span></div>`;
       if (b.type === 'hospital') h += `<div class="row"><span>病患</span><span>${b.pat || 0} / ${D.beds}</span></div><div class="row"><span>藥草</span><span>${fmt(inv(b, 'herb'))}</span></div><div class="row"><span>看診</span><span>${b.staffT > G.t ? '進行中' : '醫師不在'}</span></div>`;
@@ -2898,7 +2906,7 @@ function panelClick(e) {
   assignJobs(); drawPanel(true);
 }
 function panelChange(e) { const a = e.target.dataset.a, b = UI.sel && BI.get(UI.sel.id); if (!b) return; const v = e.target.value;
-  if (a === 'crop') { b.crop = v; if (b.g) { for (let i = 0; i < b.g.length; i++) if (b.g[i] >= 0 && b.g[i] < 0.15) b.g[i] = -1; b.gd = true; } } else if (a === 'fruit') { if (b.fruit !== v) { b.fruit = v; if (b.slots) for (const s of b.slots) s.age = -1; b.gd = true; } } else if (a === 'animal') { b.animal = v; b.animalSet = true; } else if (a === 'prod') { b.prod = v; if (RECIPES[b.type]) b.limit = RECIPES[b.type][v].limit; }
+  if (a === 'crop') { b.crop = v; if (b.g) { for (let i = 0; i < b.g.length; i++) if (b.g[i] >= 0 && b.g[i] < 0.15) b.g[i] = -1; b.gd = true; } } else if (a === 'fruit') { if (b.fruit !== v) { b.fruit = v; if (b.slots) for (const s of b.slots) s.age = -1; b.gd = true; } } else if (a === 'animal') { if (!v) return; if (b.animal && b.animal !== v && b.count > 0) { G.herd[b.animal] = (G.herd[b.animal] || 0) + b.count; logEv(`牧場改養${ANIMALS[v].n}，原本的 ${b.count} 隻${ANIMALS[b.animal].n}改為待安置。`, 'info', b.ex, b.ey); b.count = 0; b.brF = 0; b.splitNow = false; } b.animal = v; b.animalSet = true; b.gd = true; for (const c of G.cits) if (c.herdMove && c.work === b.id) clearPlan(c); } else if (a === 'prod') { b.prod = v; if (RECIPES[b.type]) b.limit = RECIPES[b.type][v].limit; }
   e.target.blur(); drawPanel(true); }
 // ── 上方列、警示、紀事 ──
 function drawTop() {
